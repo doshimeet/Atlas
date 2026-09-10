@@ -42,6 +42,7 @@ export default function ExplorerPage() {
   const [traversalType, setTraversalType] = useState<PathTraversalType>("all");
   const [depth, setDepth] = useState<number>(4);
   const [askQuery, setAskQuery] = useState<string>("");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Faceted Filter States (Fully Reactive)
   const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>([
@@ -123,6 +124,17 @@ export default function ExplorerPage() {
     }
     loadGraph();
   }, []);
+
+  // Keyboard shortcut for Escape key to exit fullscreen mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
 
   // Quick lookup map for nodes
   const nodesMap = useMemo(() => {
@@ -392,7 +404,7 @@ export default function ExplorerPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-[calc(100vh-56px)] w-full flex-col items-center justify-center bg-slate-50">
+      <div className="flex flex-1 h-full w-full flex-col items-center justify-center bg-slate-50">
         <Loader2 className="h-8 w-8 animate-spin text-sky-600" />
         <span className="mt-3 text-xs font-semibold text-slate-600">
           Synthesizing World Bank Operational Knowledge Graph...
@@ -402,12 +414,19 @@ export default function ExplorerPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-56px)] w-full overflow-hidden bg-slate-50/50">
+    <div
+      className={`flex flex-col w-full overflow-hidden transition-all duration-150 ${
+        isFullscreen
+          ? "fixed inset-0 z-50 w-screen h-screen bg-slate-50"
+          : "flex-1 h-full bg-slate-50/50"
+      }`}
+    >
       <Head>
         <title>Knowledge Graph Explorer | Atlas Knowledge • World Bank Group</title>
       </Head>
-      {/* 1. Hero Banner with "Ask the Knowledge Graph" Search Input */}
-      <div className="relative shrink-0 border-b border-slate-200 bg-gradient-to-r from-sky-50/70 via-white to-slate-50 px-6 py-3 select-none">
+      {/* 1. Hero Banner with "Ask the Knowledge Graph" Search Input (Hidden in Full Screen) */}
+      {!isFullscreen && (
+        <div className="relative shrink-0 border-b border-slate-200 bg-gradient-to-r from-sky-50/70 via-white to-slate-50 px-6 py-3 select-none">
         <div className="mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           {/* Left: Title & Subtitle */}
           <div className="max-w-xl">
@@ -447,6 +466,7 @@ export default function ExplorerPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* 2. Top Canvas Workspace Command Strip */}
       <div className="flex h-11 w-full shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 select-none">
@@ -473,6 +493,13 @@ export default function ExplorerPage() {
               >
                 ✕
               </button>
+            </div>
+          )}
+
+          {isFullscreen && (
+            <div className="hidden sm:flex items-center gap-1.5 rounded-full bg-sky-50 border border-sky-200/80 px-2.5 py-0.5 text-[10px] font-bold text-sky-700">
+              <Sparkles className="h-2.5 w-2.5 text-sky-500" />
+              <span>Full Screen • Press Esc to Exit</span>
             </div>
           )}
         </div>
@@ -529,6 +556,31 @@ export default function ExplorerPage() {
             >
               <Minimize2 className="h-3 w-3 text-slate-500" />
               <span className="hidden md:inline">Collapse</span>
+            </button>
+
+            <div className="h-3.5 w-px bg-slate-200" />
+
+            {/* Full Screen Mode Toggle */}
+            <button
+              onClick={() => setIsFullscreen((f) => !f)}
+              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold transition-all ${
+                isFullscreen
+                  ? "border-sky-500 bg-sky-50 text-sky-700 font-bold shadow-2xs"
+                  : "border-slate-200 text-slate-700 hover:bg-slate-50"
+              }`}
+              title={isFullscreen ? "Exit Fullscreen (Esc)" : "Enter Fullscreen Mode"}
+            >
+              {isFullscreen ? (
+                <>
+                  <Minimize2 className="h-3 w-3 text-sky-600" />
+                  <span>Exit Fullscreen</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="h-3 w-3 text-slate-500" />
+                  <span className="hidden md:inline">Full Screen</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -625,17 +677,21 @@ export default function ExplorerPage() {
           )}
         </div>
 
-        {/* Column 3: Right Docked Resizable Inspector Sidebar */}
-        <DocumentInspectorPanel
-          node={selectedNode}
-          onClose={() => handleSelectNode(null)}
-          onFocusNode={(nodeId) => setFocusedNodeId(nodeId)}
-          onOpenDossier={handleOpenDossier}
-        />
+        {/* Column 3: Right Floating Inspector Card (with aesthetic margins) */}
+        {selectedNode && (
+          <div className="py-2.5 pr-2.5 pl-0 h-full flex flex-col shrink-0 z-20 transition-all duration-200">
+            <DocumentInspectorPanel
+              node={selectedNode}
+              onClose={() => handleSelectNode(null)}
+              onFocusNode={(nodeId) => setFocusedNodeId(nodeId)}
+              onOpenDossier={handleOpenDossier}
+            />
+          </div>
+        )}
       </div>
 
-      {/* 4. Bottom Feature Ribbon (Mockup Replacement for Marketing Footer) */}
-      <BottomFeatureRibbon />
+      {/* 4. Bottom Feature Ribbon (Hidden in Full Screen Mode) */}
+      {!isFullscreen && <BottomFeatureRibbon />}
 
       {/* Dedicated Document Dossier Reader Modal */}
       <DocumentDossierModal

@@ -33,15 +33,7 @@ export function DocumentInspectorPanel({
   const [isFavorited, setIsFavorited] = useState(false);
 
   if (!node) {
-    return (
-      <aside className="hidden lg:flex h-full w-[360px] shrink-0 flex-col items-center justify-center border-l border-slate-200 bg-white/95 p-6 text-center text-slate-400 select-none">
-        <FileText className="h-10 w-10 text-slate-300 stroke-[1.5]" />
-        <h4 className="mt-3 text-xs font-bold text-slate-600">No Document Selected</h4>
-        <p className="mt-1 text-[11px] text-slate-400 leading-relaxed max-w-[220px]">
-          Select any publication, empirical finding, or entity node on the canvas to inspect detailed intelligence.
-        </p>
-      </aside>
-    );
+    return null;
   }
 
   // Derive display values from node
@@ -62,7 +54,7 @@ export function DocumentInspectorPanel({
   ];
 
   return (
-    <aside className="flex h-full w-[360px] shrink-0 flex-col justify-between overflow-y-auto border-l border-slate-200 bg-white/95 p-4 text-xs select-none backdrop-blur-md">
+    <aside className="flex h-full w-[380px] max-w-[calc(100vw-32px)] shrink-0 flex-col justify-between overflow-y-auto rounded-2xl border border-slate-200/90 bg-white/95 p-4 text-xs select-none shadow-xl backdrop-blur-md transition-all duration-200 animate-in fade-in slide-in-from-right-3">
       {/* Top Header & Actions */}
       <div className="space-y-3">
         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">

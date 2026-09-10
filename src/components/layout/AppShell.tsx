@@ -25,9 +25,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isExplorer = pathname === "/explorer";
 
   return (
-    <div className="flex min-h-screen flex-col bg-wbg-porcelain text-wbg-slate-900 font-sans selection:bg-sky-100 selection:text-wbg-navy">
+    <div className={`flex ${isExplorer ? "h-screen overflow-hidden" : "min-h-screen"} flex-col bg-wbg-porcelain text-wbg-slate-900 font-sans selection:bg-sky-100 selection:text-wbg-navy`}>
       <GlobalHeader onOpenSearch={() => setSearchOpen(true)} />
-      <main className={`flex-1 w-full ${isExplorer ? "overflow-hidden" : ""}`}>{children}</main>
+      <main className="flex-1 w-full overflow-hidden flex flex-col">{children}</main>
       {!isExplorer && <GlobalFooter />}
       <CommandPalette isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
