@@ -2,9 +2,8 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, FileText, Globe2, Building2, ArrowRight, ShieldCheck } from "lucide-react";
-import { VERIFIED_PROJECT_DOSSIERS } from "@/lib/wbgApi";
-import { formatCurrencyM } from "@/lib/utils";
+import { Search, X, FileText, Globe2, Building2, ArrowRight, ShieldCheck, BookOpen } from "lucide-react";
+import { fetchLivePublications, LivePublicationAsset } from "@/lib/wbgApi";
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -14,7 +13,16 @@ interface CommandPaletteProps {
 export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [publications, setPublications] = useState<LivePublicationAsset[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchLivePublications().then((data) => {
+      if (data && data.length > 0) {
+        setPublications(data);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -45,12 +53,13 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
 
   if (!isOpen) return null;
 
-  const filtered = VERIFIED_PROJECT_DOSSIERS.filter(
-    (d) =>
-      d.id.toLowerCase().includes(query.toLowerCase()) ||
-      d.projectTitle.toLowerCase().includes(query.toLowerCase()) ||
-      d.country.toLowerCase().includes(query.toLowerCase()) ||
-      d.sector.toLowerCase().includes(query.toLowerCase())
+  const filtered = publications.filter(
+    (p) =>
+      p.id.toLowerCase().includes(query.toLowerCase()) ||
+      p.title.toLowerCase().includes(query.toLowerCase()) ||
+      p.country?.toLowerCase().includes(query.toLowerCase()) ||
+      p.sector?.toLowerCase().includes(query.toLowerCase()) ||
+      p.abstract?.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -67,7 +76,7 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search operations, member countries, PAD IDs (e.g. P173840, Kenya, Solar)..."
+            placeholder="Search Policy Research Papers, authors, global practices (e.g. Climate, Digital, Berg)..."
             className="ml-3 w-full bg-transparent text-sm text-wbg-slate-900 placeholder:text-wbg-slate-400 focus:outline-hidden"
           />
           <button
@@ -82,44 +91,46 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         <div className="max-h-96 overflow-y-auto p-2">
           {filtered.length === 0 ? (
             <div className="p-8 text-center text-xs text-wbg-slate-500">
-              No World Bank operations found matching &quot;{query}&quot;.
+              No World Bank research papers found matching &quot;{query}&quot;.
             </div>
           ) : (
             <div className="space-y-1">
               <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Verified Project Dossiers ({filtered.length})
+                Live Research Publications ({filtered.length})
               </div>
               {filtered.map((item) => (
                 <div
                   key={item.id}
                   onClick={() => {
                     onClose();
-                    router.push(`/explorer?search=${encodeURIComponent(item.country)}`);
+                    router.push(`/explorer?search=${encodeURIComponent(item.title)}`);
                   }}
                   className="group flex cursor-pointer items-center justify-between rounded-xl px-3 py-2.5 text-xs hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-50 text-wbg-sapphire">
-                      <FileText className="h-4 w-4" />
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50 text-teal-700">
+                      <BookOpen className="h-4 w-4" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-wbg-navy tracking-tight">{item.id}</span>
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-wbg-slate-600">
-                          {item.country}
-                        </span>
-                        <span className="text-[11px] font-semibold text-wbg-sapphire">
-                          {formatCurrencyM(item.commitmentUSD / 1000000)}
+                        {item.country && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-wbg-slate-600">
+                            {item.country}
+                          </span>
+                        )}
+                        <span className="rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">
+                          {item.sector || "Policy Research"}
                         </span>
                       </div>
                       <p className="line-clamp-1 text-[11px] text-wbg-slate-600">
-                        {item.projectTitle}
+                        {item.title}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 text-[11px] text-slate-400 group-hover:text-wbg-navy">
-                    <span className="hidden sm:inline">Inspect Graph</span>
+                    <span className="hidden sm:inline">Explore Graph</span>
                     <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </div>

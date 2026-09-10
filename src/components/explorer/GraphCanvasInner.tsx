@@ -10,8 +10,15 @@ import {
   GraphCanvasRef,
   Theme,
 } from "reagraph";
-import { GraphNode, GraphEdge, PathTraversalType, GraphLayoutAlgorithm } from "@/lib/types";
-import { getNodeIcon } from "@/lib/investigationIcons";
+import {
+  GraphNode,
+  GraphEdge,
+  PathTraversalType,
+  GraphLayoutAlgorithm,
+  NodePresentationMode,
+  BracketAnnotation,
+} from "@/lib/types";
+import { getNodeIcon, getCategoryDot } from "@/lib/investigationIcons";
 import { findShortestPath } from "@/lib/graphBuilder";
 
 export interface GraphCanvasInnerProps {
@@ -19,6 +26,7 @@ export interface GraphCanvasInnerProps {
   edges: GraphEdge[];
   traversalType: PathTraversalType;
   layoutAlgorithm: GraphLayoutAlgorithm;
+  presentationMode?: NodePresentationMode;
   isDraggable: boolean;
   edgeInterpolation: "curved" | "linear";
   themeMode: "light" | "dark";
@@ -27,6 +35,7 @@ export interface GraphCanvasInnerProps {
   onHoverNode?: (nodeId: string | null) => void;
   graphRef: React.RefObject<GraphCanvasRef | null>;
   pathTraceTarget?: { source: string; target: string } | null;
+  isInspectorCollapsed?: boolean;
 }
 
 const lightAtlasTheme: Theme = {
@@ -38,10 +47,10 @@ const lightAtlasTheme: Theme = {
     activeFill: "#002244",
     opacity: 0.95,
     selectedOpacity: 1,
-    inactiveOpacity: 0.22,
+    inactiveOpacity: 0.25,
     label: {
-      color: "#002244",
-      activeColor: "#0071bc",
+      color: "#0f172a",
+      activeColor: "#0284c7",
     },
   },
   ring: {
@@ -49,24 +58,24 @@ const lightAtlasTheme: Theme = {
     activeFill: "#0284c7",
   },
   edge: {
-    fill: "#94a3b8",
-    activeFill: "#f59e0b",
-    opacity: 0.65,
+    fill: "#cbd5e1",
+    activeFill: "#0d9488",
+    opacity: 0.75,
     selectedOpacity: 1,
-    inactiveOpacity: 0.15,
+    inactiveOpacity: 0.12,
     label: {
-      color: "#475569",
-      activeColor: "#002244",
-      fontSize: 5,
+      color: "#0f766e",
+      activeColor: "#0f172a",
+      fontSize: 8,
     },
   },
   arrow: {
-    fill: "#64748b",
-    activeFill: "#f59e0b",
+    fill: "#94a3b8",
+    activeFill: "#0d9488",
   },
   lasso: {
-    background: "rgba(0, 113, 188, 0.1)",
-    border: "#0071bc",
+    background: "rgba(13, 148, 136, 0.1)",
+    border: "#0d9488",
   },
 };
 
@@ -81,33 +90,33 @@ const cyberDarkTheme: Theme = {
     selectedOpacity: 1,
     inactiveOpacity: 0.2,
     label: {
-      color: "#e2e8f0",
+      color: "#f1f5f9",
       activeColor: "#38bdf8",
     },
   },
   ring: {
-    fill: "#0284c7",
+    fill: "#0d9488",
     activeFill: "#38bdf8",
   },
   edge: {
-    fill: "#334155",
-    activeFill: "#38bdf8",
-    opacity: 0.6,
+    fill: "#1e293b",
+    activeFill: "#2dd4bf",
+    opacity: 0.7,
     selectedOpacity: 1,
-    inactiveOpacity: 0.15,
+    inactiveOpacity: 0.1,
     label: {
-      color: "#94a3b8",
+      color: "#2dd4bf",
       activeColor: "#38bdf8",
-      fontSize: 5,
+      fontSize: 8,
     },
   },
   arrow: {
-    fill: "#475569",
-    activeFill: "#38bdf8",
+    fill: "#334155",
+    activeFill: "#2dd4bf",
   },
   lasso: {
-    background: "rgba(56, 189, 248, 0.15)",
-    border: "#38bdf8",
+    background: "rgba(45, 212, 191, 0.15)",
+    border: "#2dd4bf",
   },
 };
 
@@ -115,57 +124,132 @@ export default function GraphCanvasInner({
   nodes,
   edges,
   traversalType,
-  layoutAlgorithm,
+  layoutAlgorithm = "treeLr2d",
+  presentationMode = "pill_minimalist",
   isDraggable,
-  edgeInterpolation,
+  edgeInterpolation = "curved",
   themeMode,
   selectedNodeId,
   onSelectNode,
   onHoverNode,
   graphRef,
   pathTraceTarget,
+  isInspectorCollapsed = false,
 }: GraphCanvasInnerProps) {
   const [customPathActives, setCustomPathActives] = useState<string[] | null>(null);
+  const [internalHoveredNodeId, setInternalHoveredNodeId] = useState<string | null>(null);
 
-  // Format nodes and edges for Reagraph with dynamic path highlighting
+  // Parent-Path Backtracking: Find lineage back to facility root
+  const upstreamPath = useMemo(() => {
+    if (!selectedNodeId) return null;
+    // BFS upstream to root
+    const visited = new Set<string>();
+    const queue = [selectedNodeId];
+    const activeNodes = new Set<string>([selectedNodeId]);
+    const activeEdges = new Set<string>();
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      visited.add(curr);
+
+      // Find incoming edges
+      for (const e of edges) {
+        if (e.target === curr && !visited.has(e.source)) {
+          activeNodes.add(e.source);
+          activeEdges.add(e.id);
+          queue.push(e.source);
+        }
+      }
+    }
+    return {
+      nodeIds: Array.from(activeNodes),
+      edgeIds: Array.from(activeEdges),
+    };
+  }, [selectedNodeId, edges]);
+
+  // Format nodes with Pill-Box Geometry and Icon / Dot Toggle
   const formattedNodes = useMemo(() => {
     return nodes.map((node) => {
-      const isPathNode = customPathActives?.includes(node.id);
-      const baseSize =
-        node.category === "project" ? 9 : node.category === "country" ? 11 : node.category === "discrepancy" ? 10 : 8;
+      const isPathNode = customPathActives?.includes(node.id) || upstreamPath?.nodeIds.includes(node.id);
+      const isSelected = selectedNodeId === node.id;
+      
+      // Node sizing calibrated for crisp readability: Root (28), Themes (24), Publications (20), Authors/Findings (16-18)
+      let baseSize = 16;
+      if (node.id === "FAC_WBG_KNOWLEDGE") {
+        baseSize = 28;
+      } else if (node.id.startsWith("THEME_") || node.category === "institution") {
+        baseSize = 24;
+      } else if (node.category === "asset" || node.category === "project" || node.id.startsWith("PUB_")) {
+        baseSize = 20;
+      } else if (node.category === "geography" || node.category === "country" || node.id.startsWith("AUTH_")) {
+        baseSize = 18;
+      } else {
+        baseSize = 16;
+      }
+
+      // Icon vs Minimalist Dot Badge
+      const iconUri = presentationMode === "rich_institutional_icons"
+        ? (node.icon || getNodeIcon(node.category, node.subType || (node as any).organization))
+        : getCategoryDot(node.category);
+
+      // Truncate label cleanly without cutting short words
+      let labelText = node.label;
+      if (labelText.length > 36) {
+        labelText = labelText.substring(0, 34) + "...";
+      }
+
       return {
         id: node.id,
-        label: node.label,
-        icon: (node as any).icon || getNodeIcon(node.category, node.subType || (node as any).organization),
-        fill: isPathNode ? (themeMode === "dark" ? "#f59e0b" : "#0284c7") : (node as any).fill,
-        cluster: (node as any).cluster,
+        label: labelText,
+        icon: iconUri,
+        fill: isSelected
+          ? "#f59e0b"
+          : isPathNode
+          ? "#0284c7"
+          : node.fill || (node.category === "institution" ? "#3b82f6" : node.category === "geography" ? "#0d9488" : "#0284c7"),
+        cluster: node.cluster || (node as any).cluster,
         data: (node as any).data || node.metadata,
-        size: isPathNode ? baseSize + 4 : baseSize,
+        size: isSelected ? baseSize + 6 : isPathNode ? baseSize + 3 : baseSize,
       };
     });
-  }, [nodes, customPathActives, themeMode]);
+  }, [nodes, customPathActives, upstreamPath, selectedNodeId, presentationMode]);
 
+  // Format edges with Progressive Disclosure (Silent by default; illuminate on hover/select)
   const formattedEdges = useMemo(() => {
+    const activeNodeIds = new Set<string>();
+    if (selectedNodeId) activeNodeIds.add(selectedNodeId);
+    if (internalHoveredNodeId) activeNodeIds.add(internalHoveredNodeId);
+    if (upstreamPath) {
+      for (const nid of upstreamPath.nodeIds) activeNodeIds.add(nid);
+    }
+    if (customPathActives) {
+      for (const id of customPathActives) activeNodeIds.add(id);
+    }
+
     return edges.map((edge) => {
-      const isPathEdge = customPathActives?.includes(edge.id);
+      const isPathEdge = customPathActives?.includes(edge.id) || upstreamPath?.edgeIds.includes(edge.id);
+      const isConnectedToActive = activeNodeIds.has(edge.source) || activeNodeIds.has(edge.target);
+      
+      // Progressive disclosure: hide label until user hovers or selects
+      const showLabel = isPathEdge || isConnectedToActive;
+      const displayLabel = showLabel
+        ? `${edge.label}${edge.financingAmountM ? ` ($${edge.financingAmountM}M)` : ""}`
+        : "";
+
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        label: isPathEdge
-          ? `${edge.label}${edge.financingAmountM ? ` ($${edge.financingAmountM}M)` : ""}`
-          : edge.label,
+        label: displayLabel,
         fill: isPathEdge
           ? "#f59e0b"
-          : edge.label === "FLAGGED_IN"
-          ? "#dc2626"
-          : edge.label === "FINANCES"
-          ? "#0284c7"
-          : "#94a3b8",
-        size: isPathEdge ? 4.0 : edge.label === "FLAGGED_IN" ? 2.5 : 1.8,
+          : edge.isPrimaryBackbone
+          ? "#0d9488" // Teal mind-map S-curve (like reference diagram)
+          : "#64748b",
+        size: isPathEdge ? 3.8 : edge.isPrimaryBackbone ? 2.2 : 1.4,
       };
     });
-  }, [edges, customPathActives]);
+  }, [edges, customPathActives, upstreamPath, selectedNodeId, internalHoveredNodeId]);
 
   // Reagraph useSelection Hook
   const {
@@ -186,12 +270,9 @@ export default function GraphCanvasInner({
     focusOnSelect: true,
   });
 
-  // Handle external selection prop change (e.g. from table or dossier) safely
+  // Handle external selection prop change
   useEffect(() => {
-    // If path tracing is active, DO NOT clear selections or override with single node
-    if (pathTraceTarget?.source && pathTraceTarget?.target) {
-      return;
-    }
+    if (pathTraceTarget?.source && pathTraceTarget?.target) return;
     if (selectedNodeId) {
       const existsInCanvas = formattedNodes.some((n) => n.id === selectedNodeId);
       if (existsInCanvas) {
@@ -206,7 +287,7 @@ export default function GraphCanvasInner({
     }
   }, [selectedNodeId, formattedNodes, selections, setSelections, clearSelections, pathTraceTarget]);
 
-  // Handle path trace request safely with custom BFS pathfinder and auto camera framing
+  // Handle path trace target
   useEffect(() => {
     if (pathTraceTarget?.source && pathTraceTarget?.target) {
       const sourceExists = nodes.some((n) => n.id === pathTraceTarget.source);
@@ -216,7 +297,6 @@ export default function GraphCanvasInner({
         if (path) {
           setSelections(path.nodeIds);
           setCustomPathActives([...path.nodeIds, ...path.edgeIds]);
-          // Auto-frame camera on the lineage path
           setTimeout(() => {
             try {
               if (graphRef.current?.fitNodesInView) {
@@ -227,7 +307,6 @@ export default function GraphCanvasInner({
             }
           }, 150);
         } else {
-          // Graceful fallback for disconnected nodes
           setSelections([pathTraceTarget.source, pathTraceTarget.target]);
           setCustomPathActives([pathTraceTarget.source, pathTraceTarget.target]);
         }
@@ -237,9 +316,11 @@ export default function GraphCanvasInner({
     }
   }, [pathTraceTarget, nodes, edges, setSelections, graphRef]);
 
-  // Active state masking: prioritize custom path tracer; when node is selected, use reagraph actives
+  // Active state masking
   const effectiveActives = customPathActives
     ? customPathActives
+    : upstreamPath?.nodeIds && upstreamPath.nodeIds.length > 0
+    ? [...upstreamPath.nodeIds, ...upstreamPath.edgeIds]
     : selections.length > 0
     ? actives
     : undefined;
@@ -248,6 +329,7 @@ export default function GraphCanvasInner({
 
   return (
     <div className="relative h-full w-full overflow-hidden">
+      {/* 1. Main Reagraph Canvas */}
       <GraphCanvas
         ref={graphRef as any}
         nodes={formattedNodes}
@@ -257,14 +339,16 @@ export default function GraphCanvasInner({
         theme={currentTheme}
         draggable={isDraggable}
         layoutType={layoutAlgorithm}
+        maxDistance={3500}
+        minDistance={200}
         layoutOverrides={{
-          linkDistance: 190,
-          nodeStrength: -850,
-          clusterStrength: 0.8,
+          linkDistance: layoutAlgorithm === "treeLr2d" ? 85 : 120,
+          nodeStrength: -180,
+          clusterStrength: 0.9,
         }}
         edgeInterpolation={edgeInterpolation}
-        labelType="nodes"
-        edgeArrowPosition="end"
+        labelType="all"
+        edgeArrowPosition={layoutAlgorithm === "treeLr2d" ? "none" : "end"}
         onCanvasClick={(e) => {
           onCanvasClick?.(e);
           onSelectNode(null);
@@ -275,10 +359,12 @@ export default function GraphCanvasInner({
         }}
         onNodePointerOver={(node) => {
           onNodePointerOver?.(node);
+          setInternalHoveredNodeId(node.id);
           onHoverNode?.(node.id);
         }}
         onNodePointerOut={(node) => {
           onNodePointerOut?.(node);
+          setInternalHoveredNodeId(null);
           onHoverNode?.(null);
         }}
       />

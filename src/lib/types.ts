@@ -4,7 +4,12 @@ export type EntityCategory =
   | "ministry"
   | "tech"
   | "policy"
-  | "discrepancy";
+  | "discrepancy"
+  | "asset"
+  | "institution"
+  | "geography"
+  | "pillar"
+  | "covenant";
 
 export type RelationType =
   | "FINANCES"
@@ -12,16 +17,34 @@ export type RelationType =
   | "DEPLOYED_IN"
   | "IMPLEMENTED_BY"
   | "GOVERNED_BY"
-  | "FLAGGED_IN";
+  | "FLAGGED_IN"
+  | "HOSTS_OPERATION"
+  | "ENFORCES"
+  | "COMMITS_CAPITAL"
+  | "APPOINTS_EXECUTING_AGENCY"
+  | "MANDATED_TO_DEPLOY"
+  | string;
 
 export type PathTraversalType = "out" | "in" | "all" | "direct";
 
 export type GraphLayoutAlgorithm =
-  | "forceDirected2d"
+  | "treeLr2d"
   | "hierarchicalTd"
+  | "forceDirected2d"
   | "circular2d"
-  | "radialOut2d"
-  | "treeLr2d";
+  | "radialOut2d";
+
+export type NodePresentationMode = "pill_minimalist" | "rich_institutional_icons";
+
+export interface BracketAnnotation {
+  id: string;
+  label: string;
+  subLabel?: string;
+  color: string;
+  nodeIds: string[];
+  topNodeId?: string;
+  bottomNodeId?: string;
+}
 
 export interface MitreTacticColumn {
   id: string;
@@ -49,9 +72,12 @@ export interface GraphNode {
   region?: string;
   sector?: string;
   financingAmountM?: number; // In Millions USD
-  organization?: "IBRD" | "IDA" | "IFC" | "MIGA" | "ICSID";
+  organization?: "IBRD" | "IDA" | "IFC" | "MIGA" | "ICSID" | string;
+  icon?: string;
+  fill?: string;
+  cluster?: string;
   provenance: W3CProvenance;
-  metadata: {
+  metadata?: {
     approvalDate?: string;
     closingDate?: string;
     leadAgency?: string;
@@ -59,7 +85,9 @@ export interface GraphNode {
     officialUrl?: string;
     pdfDownloadUrl?: string;
     tags?: string[];
+    [key: string]: any;
   };
+  data?: Record<string, any>;
 }
 
 export interface GraphEdge {
@@ -70,6 +98,11 @@ export interface GraphEdge {
   weight?: number;
   financingAmountM?: number;
   provenanceRef?: string;
+  fill?: string;
+  size?: number;
+  isPrimaryBackbone?: boolean;
+  evidenceQuote?: string;
+  pageNumber?: number;
 }
 
 export interface GraphData {
@@ -81,10 +114,10 @@ export interface GraphData {
     color: string;
     nodeCount: number;
   }[];
-  generatedAt: string;
-  totalEntities: number;
-  totalRelationships: number;
-  totalCommitmentBillionUSD: number;
+  generatedAt?: string;
+  totalEntities?: number;
+  totalRelationships?: number;
+  totalCommitmentBillionUSD?: number;
 }
 
 export interface WbgDocument {
@@ -94,32 +127,72 @@ export interface WbgDocument {
   country: string;
   region: string;
   sector: string;
-  instrument: "IBRD" | "IDA" | "IFC" | "MIGA";
+  instrument: "IBRD" | "IDA" | "IFC" | "MIGA" | string;
   commitmentUSD: number;
   approvalDate: string;
   closingDate: string;
-  status: "Active" | "Pipeline" | "Closed";
+  status: "Active" | "Pipeline" | "Closed" | string;
   sha256Hash: string;
   pdfUrl: string;
-  appraisalRating: {
-    environmentalRisk: "Moderate" | "Substantial" | "High" | "Low";
-    implementationProgress: "Satisfactory" | "Moderately Satisfactory" | "Highly Satisfactory";
+  appraisalRating?: {
+    environmentalRisk: "Moderate" | "Substantial" | "High" | "Low" | string;
+    implementationProgress: "Satisfactory" | "Moderately Satisfactory" | "Highly Satisfactory" | string;
     disbursedPercentage: number;
   };
   metricsDiff?: {
     appraisalTargetBeneficiaries: number;
     completionActualBeneficiaries: number;
     variancePercentage: number;
-    icrAuditStatus: "RECONCILED" | "FLAGGED_DISCREPANCY" | "UNDER_REVIEW";
+    icrAuditStatus: "RECONCILED" | "FLAGGED_DISCREPANCY" | "UNDER_REVIEW" | string;
   };
 }
 
+export interface SemanticTripletItem {
+  id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  citation: string;
+  verbatimQuote: string;
+  pageNumber: number;
+  covenantCode?: string;
+  confidenceScore: number;
+  provActivity: string;
+  hash?: string;
+}
+
+export interface DocumentChunkItem {
+  id: string;
+  sectionTitle: string;
+  pageNumber: number;
+  chunkType: string;
+  content: string;
+}
+
+export interface DocumentInsightData {
+  asset: {
+    id: string;
+    title: string;
+    docType: string;
+    country: string;
+    region: string;
+    sector: string;
+    commitmentUSD: number;
+    pdfUrl: string;
+    sha256Hash: string;
+  };
+  chunks: DocumentChunkItem[];
+  triplets: SemanticTripletItem[];
+  totalSections: number;
+  totalTriplets: number;
+}
+
 export interface TelemetrySnapshot {
-  totalInvestmentsUSD: number; // e.g. $428.5 Billion
-  activeOperationsCount: number; // e.g. 1,842
-  memberCountriesActive: number; // e.g. 144
-  averageDisbursementRatio: number; // e.g. 78.4%
-  provVerifiedRatio: number; // 99.8%
+  totalInvestmentsUSD: number;
+  activeOperationsCount: number;
+  memberCountriesActive: number;
+  averageDisbursementRatio: number;
+  provVerifiedRatio: number;
   lastSyncTimestamp: string;
   instrumentBreakdown: {
     ibrd: number;

@@ -1,30 +1,42 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import {
   GitFork,
-  Compass,
   Move,
   Maximize2,
-  Minimize2,
   Sun,
   Moon,
   Crosshair,
   Route,
   ArrowRight,
-  ZoomIn,
-  ZoomOut,
   RotateCcw,
   Sparkles,
+  Layers,
+  Tag,
+  Building2,
   Search,
+  X,
+  ChevronRight,
+  Filter,
+  Eye,
+  CheckCircle2,
 } from "lucide-react";
-import { PathTraversalType, GraphLayoutAlgorithm, GraphNode, GraphEdge } from "@/lib/types";
+import {
+  PathTraversalType,
+  GraphLayoutAlgorithm,
+  NodePresentationMode,
+  GraphNode,
+  GraphEdge,
+} from "@/lib/types";
 
 interface InvestigationToolbarProps {
   traversalType: PathTraversalType;
   onTraversalChange: (type: PathTraversalType) => void;
   layoutAlgorithm: GraphLayoutAlgorithm;
   onLayoutChange: (layout: GraphLayoutAlgorithm) => void;
+  presentationMode?: NodePresentationMode;
+  onTogglePresentationMode?: () => void;
   isDraggable: boolean;
   onToggleDraggable: () => void;
   edgeInterpolation: "curved" | "linear";
@@ -41,6 +53,15 @@ interface InvestigationToolbarProps {
   onResetCamera: () => void;
   onFitGraph: () => void;
   selectedNodeId: string | null;
+  // Unified HUD Additions
+  searchQuery?: string;
+  onSearchChange?: (q: string) => void;
+  selectedPractice?: string | null;
+  onSelectPractice?: (practice: string | null) => void;
+  focusedNode?: GraphNode | null;
+  onExitFocus?: () => void;
+  totalNodesCount?: number;
+  totalEdgesCount?: number;
 }
 
 export function InvestigationToolbar({
@@ -48,6 +69,8 @@ export function InvestigationToolbar({
   onTraversalChange,
   layoutAlgorithm,
   onLayoutChange,
+  presentationMode = "pill_minimalist",
+  onTogglePresentationMode,
   isDraggable,
   onToggleDraggable,
   edgeInterpolation,
@@ -64,6 +87,14 @@ export function InvestigationToolbar({
   onResetCamera,
   onFitGraph,
   selectedNodeId,
+  searchQuery = "",
+  onSearchChange,
+  selectedPractice = null,
+  onSelectPractice,
+  focusedNode = null,
+  onExitFocus,
+  totalNodesCount = 0,
+  totalEdgesCount = 0,
 }: InvestigationToolbarProps) {
   const poolNodes = allNodes && allNodes.length > 0 ? allNodes : nodes;
   const poolEdges = allEdges && allEdges.length > 0 ? allEdges : edges;
@@ -71,16 +102,20 @@ export function InvestigationToolbar({
   const [targetId, setTargetId] = useState<string>("");
   const [showPathFinder, setShowPathFinder] = useState(false);
 
-  // Dynamically compute reachable targets from sourceId using BFS on pool of all graph elements
+  const practices = [
+    { id: "THEME_CLIMATE", label: "Climate Action" },
+    { id: "THEME_DIGITAL", label: "Digital Economy" },
+    { id: "THEME_MACRO", label: "Macro & Finance" },
+    { id: "THEME_HUMAN", label: "Human Capital" },
+  ];
+
+  // Dynamically compute reachable targets from sourceId using BFS
   const reachableTargets = useMemo(() => {
-    if (!sourceId) {
-      return [];
-    }
+    if (!sourceId) return [];
     if (!poolEdges || poolEdges.length === 0) {
       return poolNodes.filter((n) => n.id !== sourceId).map((n) => ({ ...n, distance: 1, relation: "CONNECTED" }));
     }
 
-    // Bidirectional adjacency list with relationship labels
     const adj = new Map<string, Array<{ neighbor: string; relation: string }>>();
     for (const e of poolEdges) {
       if (!adj.has(e.source)) adj.set(e.source, []);
@@ -89,19 +124,18 @@ export function InvestigationToolbar({
       adj.get(e.target)!.push({ neighbor: e.source, relation: e.label });
     }
 
-    // BFS to find all reachable nodes and their distance
     const distances = new Map<string, number>();
     const directRelations = new Map<string, string>();
     const queue: Array<{ id: string; dist: number }> = [{ id: sourceId, dist: 0 }];
     distances.set(sourceId, 0);
 
     while (queue.length > 0) {
-      const { id, dist } = queue.shift()!;
-      const neighbors = adj.get(id) || [];
+      const { id: currId, dist } = queue.shift()!;
+      const neighbors = adj.get(currId) || [];
       for (const { neighbor, relation } of neighbors) {
         if (!distances.has(neighbor)) {
           distances.set(neighbor, dist + 1);
-          if (dist === 0) {
+          if (currId === sourceId) {
             directRelations.set(neighbor, relation);
           }
           queue.push({ id: neighbor, dist: dist + 1 });
@@ -109,268 +143,289 @@ export function InvestigationToolbar({
       }
     }
 
-    // Filter nodes that are reachable (distance > 0)
     return poolNodes
-      .filter((n) => distances.has(n.id) && n.id !== sourceId)
+      .filter((n) => n.id !== sourceId && distances.has(n.id))
       .map((n) => ({
         ...n,
-        distance: distances.get(n.id) || 1,
-        relation: directRelations.get(n.id) || "LINKED_TO",
+        distance: distances.get(n.id)!,
+        relation: directRelations.get(n.id) || "INDIRECT_LINK",
       }))
       .sort((a, b) => a.distance - b.distance);
   }, [sourceId, poolNodes, poolEdges]);
 
-  // If targetId is no longer reachable from sourceId, automatically reset targetId
-  useEffect(() => {
-    if (sourceId && targetId) {
-      const isReachable = reachableTargets.some((n) => n.id === targetId);
-      if (!isReachable) {
-        setTargetId("");
-      }
-    }
-  }, [sourceId, reachableTargets, targetId]);
-
-  const handleRunTrace = () => {
+  const handleStartTrace = () => {
     if (sourceId && targetId) {
       onTracePath(sourceId, targetId);
+      setShowPathFinder(false);
     }
   };
 
   return (
-    <div className="w-full border-b border-wbg-border bg-white/95 px-4 py-2.5 sm:px-6 shadow-xs backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
-        {/* Left: Investigation & Path Traversal Controls */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* Path Traversal Selector */}
-          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 text-xs">
-            <span className="px-2 font-bold text-wbg-slate-600 text-[10px] uppercase tracking-wider flex items-center gap-1">
-              <GitFork className="h-3 w-3 text-wbg-sapphire" />
-              <span className="hidden md:inline">Flow:</span>
-            </span>
-            {[
-              {
-                type: "out" as PathTraversalType,
-                label: "Impact & Delivery",
-                icon: "↘",
-                hint: "Trace outward: projects, recipient countries, and technologies receiving funds",
-              },
-              {
-                type: "in" as PathTraversalType,
-                label: "Funding Origin",
-                icon: "↖",
-                hint: "Trace inward: multilateral facilities and authorizers who originated capital",
-              },
-              {
-                type: "direct" as PathTraversalType,
-                label: "Immediate Contacts",
-                icon: "⊙",
-                hint: "Show only directly touching entities (1-hop without cascades)",
-              },
-              {
-                type: "all" as PathTraversalType,
-                label: "Complete Ecosystem",
-                icon: "🕸",
-                hint: "Show entire interconnected cluster across both directions",
-              },
-            ].map((item) => (
-              <button
-                key={item.type}
-                onClick={() => onTraversalChange(item.type)}
-                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                  traversalType === item.type
-                    ? "bg-wbg-navy text-white shadow-2xs"
-                    : "text-wbg-slate-600 hover:text-wbg-navy hover:bg-white"
-                }`}
-                title={item.hint}
-              >
-                <span className="text-[10px] opacity-70">{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
+    <div className="relative z-30 w-full border-b border-slate-200/80 bg-white/90 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/90 shadow-2xs">
+      {/* Unified 48px Command HUD Bar */}
+      <div className="flex h-12 items-center justify-between px-3 md:px-4 gap-2">
+        {/* Left Section: Focus Breadcrumb OR Global Practice Filter */}
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
+          {focusedNode ? (
+            <div className="flex items-center gap-2 bg-teal-50/90 border border-teal-200 rounded-lg px-2.5 py-1 text-xs">
+              <span className="flex items-center gap-1 text-teal-800 font-semibold">
+                <Eye className="h-3.5 w-3.5 text-teal-600" />
+                <span>Solo Focus:</span>
+              </span>
+              <span className="font-bold text-teal-950 max-w-[140px] sm:max-w-[220px] truncate">
+                {focusedNode.label}
+              </span>
+              {onExitFocus && (
+                <button
+                  onClick={onExitFocus}
+                  className="flex items-center gap-1 rounded bg-teal-200/60 hover:bg-teal-200 px-1.5 py-0.5 text-[10px] font-bold text-teal-900 transition-colors"
+                  title="Exit solo focus and restore full graph"
+                >
+                  <X className="h-3 w-3" />
+                  <span className="hidden sm:inline">Exit</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <div className="hidden lg:flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-0.5 text-xs">
+                <button
+                  onClick={() => onSelectPractice && onSelectPractice(null)}
+                  className={`rounded-md px-2 py-1 font-semibold transition-all ${
+                    selectedPractice === null
+                      ? "bg-white text-teal-800 shadow-2xs border border-teal-200"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  All Practices
+                </button>
+                {practices.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => onSelectPractice && onSelectPractice(selectedPractice === p.id ? null : p.id)}
+                    className={`rounded-md px-2 py-1 font-semibold transition-all ${
+                      selectedPractice === p.id
+                        ? "bg-white text-teal-800 shadow-2xs border border-teal-200"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
 
-          {/* Layout Algorithm Selector */}
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="hidden xl:inline text-wbg-slate-400 font-medium text-[11px]">Layout:</span>
-            <select
-              value={layoutAlgorithm}
-              onChange={(e) => onLayoutChange(e.target.value as GraphLayoutAlgorithm)}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-wbg-slate-700 font-medium focus:border-wbg-sapphire focus:bg-white focus:outline-hidden"
-            >
-              <option value="forceDirected2d">Dynamic Force Graph</option>
-              <option value="hierarchicalTd">Hierarchical (Governance Flow)</option>
-              <option value="circular2d">Circular Ring</option>
-              <option value="radialOut2d">Radial Institutional Hub</option>
-              <option value="treeLr2d">Pipeline Flow (Left-to-Right)</option>
-            </select>
-          </div>
-
-          {/* Draggable Physics Toggle */}
-          <button
-            onClick={onToggleDraggable}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all ${
-              isDraggable
-                ? "border-sky-300 bg-sky-50 text-wbg-sapphire shadow-2xs"
-                : "border-slate-200 bg-slate-50 text-wbg-slate-600 hover:bg-white"
-            }`}
-            title="Enable or disable physical dragging of nodes"
-          >
-            <Move className="h-3 w-3" />
-            <span className="hidden sm:inline">Draggable</span>
-          </button>
-
-          {/* Curved vs Linear Edges */}
-          <button
-            onClick={onToggleEdgeInterpolation}
-            className="hidden sm:flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-wbg-slate-600 hover:bg-white transition-all"
-            title="Toggle Curved vs Linear edge interpolation"
-          >
-            <Route className="h-3 w-3 text-slate-400" />
-            <span className="capitalize">{edgeInterpolation}</span>
-          </button>
+              {/* Mobile Practice Select */}
+              <div className="lg:hidden flex items-center">
+                <select
+                  value={selectedPractice || ""}
+                  onChange={(e) => onSelectPractice && onSelectPractice(e.target.value || null)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 focus:outline-hidden"
+                >
+                  <option value="">All Practices</option>
+                  {practices.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Right: Path Tracer, View Actions, & Theme Toggle */}
-        <div className="flex items-center gap-2">
-          {/* Path Tracer Button */}
+        {/* Center Section: Search Bar & Layout Switcher */}
+        <div className="flex items-center gap-2 flex-1 max-w-xl justify-center">
+          {onSearchChange && (
+            <div className="relative w-full max-w-xs hidden sm:block">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Search graph (papers, authors, findings)..."
+                className="w-full rounded-lg border border-slate-200/80 bg-slate-50/70 pl-8 pr-7 py-1 text-xs text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-hidden transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => onSearchChange("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Layout Switcher (Mind-Map / Hierarchy / Network) */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50/80 p-0.5 text-xs">
+            <button
+              onClick={() => onLayoutChange("treeLr2d")}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 font-semibold transition-all ${
+                layoutAlgorithm === "treeLr2d"
+                  ? "bg-white text-teal-700 shadow-2xs border border-teal-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+              title="Anubhab's Left-to-Right Horizontal Mind-Map Flow"
+            >
+              <span>🌿</span>
+              <span className="hidden md:inline">Mind-Map</span>
+            </button>
+
+            <button
+              onClick={() => onLayoutChange("hierarchicalTd")}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 font-semibold transition-all ${
+                layoutAlgorithm === "hierarchicalTd"
+                  ? "bg-white text-sky-700 shadow-2xs border border-sky-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+              title="Top-Down Governance Hierarchy"
+            >
+              <span>⬘</span>
+              <span className="hidden md:inline">Hierarchy</span>
+            </button>
+
+            <button
+              onClick={() => onLayoutChange("forceDirected2d")}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 font-semibold transition-all ${
+                layoutAlgorithm === "forceDirected2d"
+                  ? "bg-white text-purple-700 shadow-2xs border border-purple-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+              title="Free Orbiting Network Graph"
+            >
+              <span>🕸</span>
+              <span className="hidden md:inline">Network</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Right Section: Presentation Mode, Tracer, Fit, Live Counts */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Node Presentation Toggle */}
+          {onTogglePresentationMode && (
+            <button
+              onClick={onTogglePresentationMode}
+              className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold transition-all ${
+                presentationMode === "pill_minimalist"
+                  ? "border-teal-300 bg-teal-50 text-teal-700 hover:bg-teal-100/60"
+                  : "border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100/60"
+              }`}
+              title="Toggle between Minimalist Mind-Map Badges and Institutional Icons"
+            >
+              <Tag className="h-3 w-3" />
+              <span>{presentationMode === "pill_minimalist" ? "Pills" : "Icons"}</span>
+            </button>
+          )}
+
+          {/* Lineage Tracer Button */}
           <button
             onClick={() => setShowPathFinder(!showPathFinder)}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-semibold transition-all ${
               showPathFinder
-                ? "border-wbg-sapphire bg-sky-50 text-wbg-sapphire shadow-2xs"
-                : "border-slate-200 bg-slate-50 text-wbg-slate-700 hover:bg-white"
+                ? "border-teal-400 bg-teal-50 text-teal-700 shadow-2xs"
+                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white"
             }`}
-            title="Find shortest dependency chain between two entities"
+            title="Trace institutional dependency chain"
           >
-            <Crosshair className="h-3 w-3 text-wbg-sapphire" />
-            <span className="hidden md:inline">Dependency Tracer</span>
+            <Crosshair className="h-3 w-3 text-teal-600" />
+            <span className="hidden sm:inline">Tracer</span>
           </button>
 
           {/* Camera Fit / Reset */}
           <button
             onClick={onFitGraph}
-            className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-wbg-slate-600 hover:bg-white transition-colors"
-            title="Fit Graph to View"
+            className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 text-slate-600 hover:bg-white transition-colors"
+            title="Fit Graph to Screen"
           >
-            <Maximize2 className="h-3 w-3" />
+            <Maximize2 className="h-3.5 w-3.5" />
           </button>
 
           <button
             onClick={onResetCamera}
-            className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-wbg-slate-600 hover:bg-white transition-colors"
+            className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 text-slate-600 hover:bg-white transition-colors"
             title="Reset Camera Center"
           >
-            <RotateCcw className="h-3 w-3" />
+            <RotateCcw className="h-3.5 w-3.5" />
           </button>
 
-          {/* Theme Toggle (Light Atlas vs Cyber Dark) */}
-          <button
-            onClick={onToggleTheme}
-            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-all ${
-              themeMode === "dark"
-                ? "border-slate-700 bg-slate-900 text-sky-400"
-                : "border-slate-200 bg-white text-wbg-slate-700 hover:bg-slate-50"
-            }`}
-            title={themeMode === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
-          >
-            {themeMode === "dark" ? (
-              <>
-                <Moon className="h-3 w-3 text-sky-400" />
-                <span className="hidden sm:inline">Dark Mode</span>
-              </>
-            ) : (
-              <>
-                <Sun className="h-3 w-3 text-amber-500" />
-                <span className="hidden sm:inline">Light Mode</span>
-              </>
-            )}
-          </button>
+          {/* Active Live Telemetry Pill */}
+          <div className="hidden lg:flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50/80 px-2 py-1 text-[11px] font-semibold text-emerald-900">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-600"></span>
+            </span>
+            <span>{totalNodesCount || nodes.length} Nodes</span>
+            <span className="text-emerald-400">•</span>
+            <span>{totalEdgesCount || edges.length} Edges</span>
+          </div>
         </div>
       </div>
 
-      {/* Slide-Down Evidence Path Tracer Modal/Bar with Quick Story Presets */}
+      {/* Popdown: Lineage Dependency Tracer Panel */}
       {showPathFinder && (
-        <div className="mt-2.5 rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-xs transition-all animate-in fade-in duration-150 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="absolute top-12 right-4 z-40 w-96 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur-md animate-in slide-in-from-top-2 duration-150">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-wbg-navy flex items-center gap-1">
-                <Crosshair className="h-3.5 w-3.5 text-wbg-sapphire" />
-                Institutional Dependency Tracer
-              </span>
-              <span className="text-[11px] text-wbg-slate-500">
-                Trace the direct institutional linkage between any two entities:
-              </span>
+              <Crosshair className="h-4 w-4 text-teal-600" />
+              <span className="text-xs font-bold text-slate-900">Knowledge Lineage Tracer</span>
             </div>
+            <button
+              onClick={() => setShowPathFinder(false)}
+              className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="mt-3 space-y-3">
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Source Entity (Anchor)
+              </label>
               <select
                 value={sourceId}
-                onChange={(e) => setSourceId(e.target.value)}
-                className="max-w-[220px] rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-wbg-slate-800 font-medium"
+                onChange={(e) => {
+                  setSourceId(e.target.value);
+                  setTargetId("");
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-800 focus:bg-white focus:outline-hidden"
               >
-                <option value="">Select Origin Entity...</option>
-                {["project", "country", "ministry", "tech", "policy", "discrepancy"].map((cat) => {
-                  const catNodes = poolNodes.filter((n) => n.category === cat);
-                  if (catNodes.length === 0) return null;
-                  return (
-                    <optgroup key={cat} label={cat.toUpperCase()}>
-                      {catNodes.map((n) => (
-                        <option key={n.id} value={n.id}>
-                          {n.label.slice(0, 36)}
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
+                <option value="">Select origin entity...</option>
+                {poolNodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    [{n.category.toUpperCase()}] {n.label}
+                  </option>
+                ))}
               </select>
+            </div>
 
-              <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Target Entity (Destination)
+              </label>
               <select
                 value={targetId}
-                onChange={(e) => setTargetId(e.target.value)}
                 disabled={!sourceId}
-                className="max-w-[260px] rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-wbg-slate-800 disabled:opacity-50 font-medium"
+                onChange={(e) => setTargetId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-800 disabled:opacity-50 focus:bg-white focus:outline-hidden"
               >
                 <option value="">
-                  {!sourceId
-                    ? "Select Origin First..."
-                    : reachableTargets.length === 0
-                    ? "No connected targets found"
-                    : `Select Target (${reachableTargets.length} connected)...`}
+                  {sourceId ? "Select target entity..." : "First select a source..."}
                 </option>
-                {/* 1-Hop Direct Neighbors */}
-                {reachableTargets.some((n) => n.distance === 1) && (
-                  <optgroup label="🌟 DIRECT RELATIONSHIPS (1 HOP)">
-                    {reachableTargets
-                      .filter((n) => n.distance === 1)
-                      .map((n) => (
-                        <option key={n.id} value={n.id}>
-                          [{n.category.toUpperCase()}] {n.label.slice(0, 24)} ({n.relation})
-                        </option>
-                      ))}
-                  </optgroup>
-                )}
-                {/* Multi-Hop Connected Lineage */}
-                {reachableTargets.some((n) => n.distance > 1) && (
-                  <optgroup label="🔗 EXTENDED LINEAGE (MULTI-HOP)">
-                    {reachableTargets
-                      .filter((n) => n.distance > 1)
-                      .map((n) => (
-                        <option key={n.id} value={n.id}>
-                          [{n.category.toUpperCase()}] {n.label.slice(0, 24)} ({n.distance} hops)
-                        </option>
-                      ))}
-                  </optgroup>
-                )}
+                {reachableTargets.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    ({n.distance} hop{n.distance > 1 ? "s" : ""}) [{n.category.toUpperCase()}] {n.label}
+                  </option>
+                ))}
               </select>
+            </div>
 
+            <div className="flex items-center gap-2 pt-1">
               <button
-                onClick={handleRunTrace}
+                onClick={handleStartTrace}
                 disabled={!sourceId || !targetId}
-                className="rounded-lg bg-wbg-navy px-3 py-1 text-xs font-semibold text-white hover:bg-[#001730] disabled:opacity-50 transition-all shadow-xs"
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-teal-600 py-2 text-xs font-bold text-white shadow-xs hover:bg-teal-700 disabled:opacity-50 transition-colors"
               >
-                Trace Linkage
+                <Route className="h-3.5 w-3.5" />
+                <span>Calculate Shortest Path</span>
               </button>
 
               {activeTrace && onClearTrace && (
@@ -379,65 +434,14 @@ export function InvestigationToolbar({
                     setSourceId("");
                     setTargetId("");
                     onClearTrace();
+                    setShowPathFinder(false);
                   }}
-                  className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-wbg-slate-600 hover:bg-slate-50 transition-all"
+                  className="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 transition-colors"
                 >
-                  Clear Trace
+                  Clear
                 </button>
               )}
             </div>
-          </div>
-
-          {/* Quick-Start Discovery Presets */}
-          <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-sky-200/60 pt-2 text-[11px]">
-            <span className="font-bold uppercase tracking-wider text-wbg-sapphire text-[10px]">
-              Story Presets:
-            </span>
-            <button
-              onClick={() => {
-                const proj = poolNodes.find((n) => n.id === "PROJ_P176181" || n.label.includes("Digital"));
-                const ministry = poolNodes.find((n) => n.id.includes("EASTERN_AND_SOUTHERN_AFRICA") || n.label.includes("ICT"));
-                if (proj && ministry) {
-                  setSourceId(proj.id);
-                  setTargetId(ministry.id);
-                  onTracePath(proj.id, ministry.id);
-                }
-              }}
-              className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-white px-2 py-0.5 font-medium text-wbg-navy hover:bg-sky-100 hover:border-sky-300 transition-all"
-            >
-              <span>⚡</span>
-              <span>Eastern Africa Digital Flow</span>
-            </button>
-            <button
-              onClick={() => {
-                const ibrd = poolNodes.find((n) => n.id === "ORG_IBRD");
-                const solarProj = poolNodes.find((n) => n.id === "PROJ_P154283" || n.label.includes("Solar"));
-                if (ibrd && solarProj) {
-                  setSourceId(ibrd.id);
-                  setTargetId(solarProj.id);
-                  onTracePath(ibrd.id, solarProj.id);
-                }
-              }}
-              className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-white px-2 py-0.5 font-medium text-wbg-navy hover:bg-sky-100 hover:border-sky-300 transition-all"
-            >
-              <span>☀️</span>
-              <span>India Clean Energy Pipeline</span>
-            </button>
-            <button
-              onClick={() => {
-                const disc = poolNodes.find((n) => n.category === "discrepancy" || n.id === "DISC_P174350");
-                const proj = poolNodes.find((n) => n.id === "PROJ_P174350");
-                if (disc && proj) {
-                  setSourceId(disc.id);
-                  setTargetId(proj.id);
-                  onTracePath(disc.id, proj.id);
-                }
-              }}
-              className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-0.5 font-medium text-rose-700 hover:bg-rose-50 hover:border-rose-300 transition-all"
-            >
-              <span>🚨</span>
-              <span>Audit Variance Lineage</span>
-            </button>
           </div>
         </div>
       )}

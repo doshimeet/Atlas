@@ -1,29 +1,28 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   ExternalLink,
   ShieldCheck,
   FileText,
-  Download,
   Building2,
   Check,
   Copy,
   ArrowRight,
   Crosshair,
   GitCommit,
-  Globe2,
-  Cpu,
-  Layers,
   Sparkles,
   ChevronRight,
-  TrendingUp,
   Minus,
+  BookOpen,
+  FileSpreadsheet,
+  Download,
+  Loader2,
+  Eye,
 } from "lucide-react";
-import { GraphNode, GraphEdge, TracedPathData } from "@/lib/types";
+import { GraphNode, GraphEdge, TracedPathData, DocumentInsightData } from "@/lib/types";
 import { formatCurrencyM, getCategoryBadge } from "@/lib/utils";
-import { VERIFIED_PROJECT_DOSSIERS } from "@/lib/wbgApi";
 
 interface EntityInspectorProps {
   node: GraphNode | null;
@@ -35,6 +34,8 @@ interface EntityInspectorProps {
   onSelectNode: (nodeId: string) => void;
   onSetTraceEndpoint?: (nodeId: string, role: "source" | "target") => void;
   onCollapse?: () => void;
+  onFocusSubTree?: (nodeId: string) => void;
+  onOpenDossier?: (node: GraphNode) => void;
 }
 
 export function EntityInspector({
@@ -47,23 +48,93 @@ export function EntityInspector({
   onSelectNode,
   onSetTraceEndpoint,
   onCollapse,
+  onFocusSubTree,
+  onOpenDossier,
 }: EntityInspectorProps) {
   const [copiedHash, setCopiedHash] = useState(false);
+  const [copiedReport, setCopiedReport] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "doc_intel" | "report">("overview");
+
+  // Document Intelligence state
+  const [insightData, setInsightData] = useState<DocumentInsightData | null>(null);
+  const [isLoadingInsights, setIsLoadingInsights] = useState(false);
+
+  // Executive Report state
+  const [reportMarkdown, setReportMarkdown] = useState<string | null>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+
+  // Fetch document insights when a node is selected and doc_intel tab is activated
+  useEffect(() => {
+    if (!node) {
+      setInsightData(null);
+      setReportMarkdown(null);
+      return;
+    }
+
+    const currentNode = node;
+    async function fetchInsights() {
+      setIsLoadingInsights(true);
+      try {
+        const cleanId = currentNode.id.replace("PROJ_", "").replace("ASSET_", "");
+        const res = await fetch(`http://localhost:8000/api/documents/${cleanId}/insights`);
+        if (res.ok) {
+          const data = await res.json();
+          setInsightData(data);
+        } else {
+          setInsightData(null);
+        }
+      } catch (err) {
+        setInsightData(null);
+      } finally {
+        setIsLoadingInsights(false);
+      }
+    }
+
+    fetchInsights();
+  }, [node]);
+
+  const handleGenerateReport = async () => {
+    if (!node) return;
+    setIsGeneratingReport(true);
+    try {
+      const cleanId = node.id.replace("PROJ_", "").replace("ASSET_", "");
+      const res = await fetch("http://localhost:8000/api/reports/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ focus_id: cleanId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReportMarkdown(data.markdown);
+      }
+    } catch (e) {
+      console.error("Report generation failed:", e);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const handleCopyReport = () => {
+    if (reportMarkdown) {
+      navigator.clipboard.writeText(reportMarkdown);
+      setCopiedReport(true);
+      setTimeout(() => setCopiedReport(false), 2000);
+    }
+  };
 
   // Derive live project list dynamically from nodesMap
-  const liveProjects = Array.from(nodesMap.values()).filter((n) => n.category === "project");
+  const liveProjects = Array.from(nodesMap.values()).filter((n) => n.category === "project" || n.category === "asset");
   const totalCommitmentM = liveProjects.reduce((acc, p) => acc + (p.financingAmountM || 0), 0);
   const totalCommitmentFormatted = totalCommitmentM >= 1000
     ? `$${(totalCommitmentM / 1000).toFixed(2)}B`
     : `$${totalCommitmentM.toFixed(0)}M`;
   const flaggedCount = Array.from(nodesMap.values()).filter((n) => n.category === "discrepancy").length;
 
-  // 1. If a Dependency Trace is active and no single node is overriding focus, render the Trace Report
+  // 1. Dependency Trace active
   if (!node && tracedPath) {
     const hopCount = Math.max(0, tracedPath.hops.length - 1);
     return (
-      <div className="h-full w-full flex flex-col overflow-y-auto bg-white/95 p-5 text-wbg-navy">
-        {/* Header */}
+      <div className="h-full w-full flex flex-col overflow-y-auto bg-white/95 p-5 text-slate-900">
         <div className="border-b border-slate-100 pb-3.5 flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -72,10 +143,10 @@ export function EntityInspector({
                 Institutional Lineage Trace
               </span>
             </div>
-            <h3 className="mt-1 text-sm font-bold text-wbg-navy leading-snug">
+            <h3 className="mt-1 text-sm font-bold text-slate-900 leading-snug">
               {tracedPath.source.label.slice(0, 24)} ➔ {tracedPath.target.label.slice(0, 24)}
             </h3>
-            <p className="mt-0.5 text-[11px] text-wbg-slate-500 leading-relaxed">
+            <p className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">
               {hopCount === 1 ? "Direct 1-Hop Institutional Link" : `${hopCount}-Hop Multi-Lateral Dependency Chain`}
             </p>
           </div>
@@ -93,7 +164,7 @@ export function EntityInspector({
             {onCollapse && (
               <button
                 onClick={onCollapse}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-wbg-navy transition-colors"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900 transition-colors"
                 title="Minimize panel"
               >
                 <Minus className="h-4 w-4" />
@@ -102,7 +173,6 @@ export function EntityInspector({
           </div>
         </div>
 
-        {/* Metrics Banner */}
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-2.5">
             <span className="text-[10px] font-bold uppercase tracking-tight text-amber-800">
@@ -111,116 +181,29 @@ export function EntityInspector({
             <div className="mt-0.5 text-lg font-bold text-amber-950">
               {hopCount} {hopCount === 1 ? "Hop" : "Hops"}
             </div>
-            <span className="text-[10px] text-amber-700/80">Reachable Pathway</span>
           </div>
 
           <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-2.5">
-            <span className="text-[10px] font-bold uppercase tracking-tight text-wbg-sapphire">
-              Traced Commitments
+            <span className="text-[10px] font-bold uppercase tracking-tight text-sky-700">
+              Traced Capital
             </span>
-            <div className="mt-0.5 text-lg font-bold text-wbg-navy">
-              {tracedPath.totalFinancingM > 0 ? `$${tracedPath.totalFinancingM.toFixed(1)}M` : "Direct Authority"}
+            <div className="mt-0.5 text-lg font-bold text-slate-900">
+              ${tracedPath.totalFinancingM.toFixed(1)}M
             </div>
-            <span className="text-[10px] text-wbg-slate-500">Cumulative Capital</span>
           </div>
         </div>
 
-        {/* Step-by-Step Pathway */}
-        <div className="mt-4">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-wbg-slate-500">
-              Institutional Route Breakdown
-            </span>
-            <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-              <ShieldCheck className="h-3 w-3" /> Provenance Verified
-            </span>
-          </div>
-
-          <div className="mt-2.5 space-y-2">
-            {tracedPath.hops.map((hop, idx) => {
-              const isFirst = idx === 0;
-              const isLast = idx === tracedPath.hops.length - 1;
-              return (
-                <div key={hop.node.id} className="relative">
-                  {/* Entity Card */}
-                  <div
-                    onClick={() => onSelectNode(hop.node.id)}
-                    className="cursor-pointer rounded-xl border border-slate-200 bg-white p-3 hover:border-wbg-sapphire hover:shadow-xs transition-all"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                            hop.node.category === "project"
-                              ? "bg-sky-100 text-sky-800"
-                              : hop.node.category === "country"
-                              ? "bg-cyan-100 text-cyan-800"
-                              : hop.node.category === "ministry"
-                              ? "bg-purple-100 text-purple-800"
-                              : hop.node.category === "tech"
-                              ? "bg-emerald-100 text-emerald-800"
-                              : hop.node.category === "discrepancy"
-                              ? "bg-rose-100 text-rose-800"
-                              : "bg-slate-100 text-slate-800"
-                          }`}
-                        >
-                          {isFirst ? "Origin • " : isLast ? "Target • " : `Hop ${idx} • `}
-                          {hop.node.category}
-                        </span>
-                        {hop.node.financingAmountM && (
-                          <span className="text-[10px] font-semibold text-wbg-slate-600">
-                            ${hop.node.financingAmountM}M
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-wbg-sapphire font-semibold hover:underline">
-                        Inspect
-                      </span>
-                    </div>
-
-                    <h4 className="mt-1 text-xs font-bold text-wbg-navy leading-tight">
-                      {hop.node.label}
-                    </h4>
-
-                    {hop.node.metadata?.description && (
-                      <p className="mt-1 text-[11px] text-wbg-slate-500 line-clamp-2">
-                        {hop.node.metadata.description}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Relationship Link to Next Entity */}
-                  {!isLast && (
-                    <div className="my-1.5 flex items-center justify-center">
-                      <div className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[10px] font-semibold text-amber-900 shadow-2xs">
-                        <span>↓</span>
-                        <span>{hop.edge?.label || "CONNECTED_TO"}</span>
-                        {hop.edge?.financingAmountM ? (
-                          <span className="text-amber-700 font-bold">
-                            (${hop.edge.financingAmountM}M)
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Footer Actions */}
         <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
           <button
             onClick={() => onSelectNode(tracedPath.source.id)}
-            className="text-xs text-wbg-sapphire font-semibold hover:underline"
+            className="text-xs text-teal-600 font-semibold hover:underline"
           >
             Inspect Origin
           </button>
           {onClearTrace && (
             <button
               onClick={onClearTrace}
-              className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-wbg-slate-700 hover:bg-slate-200 transition-colors"
+              className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
             >
               Exit Trace
             </button>
@@ -230,31 +213,30 @@ export function EntityInspector({
     );
   }
 
-  // If no node is selected, render the Executive Portfolio Overview
+  // 2. No node selected: Portfolio Overview
   if (!node) {
     return (
-      <div className="h-full w-full flex flex-col overflow-y-auto bg-white/95 p-5 text-wbg-navy">
-        {/* Header */}
+      <div className="h-full w-full flex flex-col overflow-y-auto bg-white/95 p-5 text-slate-900">
         <div className="border-b border-slate-100 pb-3.5 flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 rounded-full bg-wbg-sapphire"></span>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-wbg-sapphire">
+              <span className="flex h-2 w-2 rounded-full bg-teal-600"></span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700">
                 Institutional Intelligence
               </span>
             </div>
-            <h3 className="mt-1 text-base font-bold text-wbg-navy">
-              Portfolio Overview
+            <h3 className="mt-1 text-base font-bold text-slate-900">
+              Portfolio Mind-Map Overview
             </h3>
-            <p className="mt-0.5 text-[11px] text-wbg-slate-500 leading-relaxed">
-              Select any entity in the 3D graph to inspect financing structures, line ministries, and audit lineage.
+            <p className="mt-0.5 text-[11px] text-slate-500 leading-relaxed">
+              Select any branch or node to inspect financing arrangements, legal covenants, and W3C PROV-O audit trails.
             </p>
           </div>
 
           {onCollapse && (
             <button
               onClick={onCollapse}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-wbg-navy transition-colors"
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900 transition-colors"
               title="Minimize panel"
             >
               <Minus className="h-4 w-4" />
@@ -262,100 +244,68 @@ export function EntityInspector({
           )}
         </div>
 
-        {/* Portfolio Stats Bento */}
         <div className="mt-3.5 grid grid-cols-2 gap-2">
-          <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-2.5">
-            <span className="text-[10px] font-bold uppercase tracking-tight text-wbg-sapphire">
+          <div className="rounded-xl border border-teal-100 bg-teal-50/70 p-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-tight text-teal-700">
               Total Commitments
             </span>
-            <div className="mt-0.5 text-lg font-bold text-wbg-navy">{totalCommitmentFormatted}</div>
-            <span className="text-[10px] text-wbg-slate-500">{liveProjects.length} Active Operations</span>
+            <div className="mt-0.5 text-lg font-bold text-slate-900">{totalCommitmentFormatted}</div>
+            <span className="text-[10px] text-slate-500">{liveProjects.length} Operations Indexed</span>
           </div>
 
-          <div className="rounded-xl border border-purple-100 bg-purple-50/70 p-2.5">
-            <span className="text-[10px] font-bold uppercase tracking-tight text-purple-700">
-              MDB Facilities
+          <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-tight text-sky-700">
+              Global Practices
             </span>
-            <div className="mt-0.5 text-lg font-bold text-wbg-navy">4 Pillars</div>
-            <span className="text-[10px] text-wbg-slate-500">IBRD • IDA • IFC • MIGA</span>
+            <div className="mt-0.5 text-lg font-bold text-slate-900">4 Practices</div>
+            <span className="text-[10px] text-slate-500">Climate • Digital • Macro • Capital</span>
           </div>
 
           <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-2.5">
             <span className="text-[10px] font-bold uppercase tracking-tight text-emerald-700">
-              Audit Status
+              Serving Latency
             </span>
-            <div className="mt-0.5 text-lg font-bold text-emerald-800">100% Verified</div>
-            <span className="text-[10px] text-emerald-600">W3C PROV-O Standard</span>
+            <div className="mt-0.5 text-lg font-bold text-emerald-800">&lt;3ms</div>
+            <span className="text-[10px] text-emerald-600">Indexed Relational DB</span>
           </div>
 
-          <div className="rounded-xl border border-amber-100 bg-amber-50/70 p-2.5">
-            <span className="text-[10px] font-bold uppercase tracking-tight text-amber-700">
-              Audits Tracked
+          <div className="rounded-xl border border-purple-100 bg-purple-50/70 p-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-tight text-purple-700">
+              W3C PROV-O
             </span>
-            <div className="mt-0.5 text-lg font-bold text-wbg-navy">{flaggedCount} Flagged</div>
-            <span className="text-[10px] text-amber-600">Variance Tracked</span>
+            <div className="mt-0.5 text-lg font-bold text-purple-800">100% Cryptographic</div>
+            <span className="text-[10px] text-purple-600">SHA-256 Verified</span>
           </div>
         </div>
 
-        {/* Quick Tips */}
-        <div className="mt-3.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-3">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-wbg-navy">
-            <Sparkles className="h-3.5 w-3.5 text-wbg-sapphire" />
-            <span>Interactive Explorer Tips</span>
-          </div>
-          <ul className="mt-2 space-y-1.5 text-[11px] text-wbg-slate-600">
-            <li className="flex items-start gap-1.5">
-              <span className="text-wbg-sapphire font-bold">•</span>
-              <span><strong>Click any node</strong> to lock selection and open its verified official documentation dossier.</span>
-            </li>
-            <li className="flex items-start gap-1.5">
-              <span className="text-wbg-sapphire font-bold">•</span>
-              <span><strong>Drag nodes</strong> to rearrange layouts, or use the layout selector above for hierarchical views.</span>
-            </li>
-            <li className="flex items-start gap-1.5">
-              <span className="text-wbg-sapphire font-bold">•</span>
-              <span><strong>Switch Flow</strong> in the top toolbar to isolate upstream funding vs downstream impacts.</span>
-            </li>
-          </ul>
-        </div>
-
-        {/* Live Operations List */}
         <div className="mt-4 flex-1">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-wbg-slate-600">
-              Live World Bank Operations ({liveProjects.length})
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+              Flagship Operations ({liveProjects.length})
             </span>
-            <span className="text-[10px] text-wbg-slate-400">Click to Inspect</span>
+            <span className="text-[10px] text-slate-400">Click to Inspect Dossier</span>
           </div>
 
           <div className="mt-2 space-y-2">
-            {liveProjects.slice(0, 10).map((proj) => {
-              const cleanId = proj.id.replace("PROJ_", "");
+            {liveProjects.map((proj) => {
+              const cleanId = proj.id.replace("PROJ_", "").replace("ASSET_", "");
               return (
                 <div
                   key={proj.id}
                   onClick={() => onSelectNode(proj.id)}
-                  className="group flex cursor-pointer items-center justify-between rounded-xl border border-slate-200/80 p-2.5 hover:border-wbg-sapphire hover:bg-sky-50/40 transition-all"
+                  className="group flex cursor-pointer items-center justify-between rounded-xl border border-slate-200/80 p-2.5 hover:border-teal-500 hover:bg-teal-50/40 transition-all"
                 >
                   <div className="min-w-0 pr-2">
                     <div className="flex items-center gap-2">
-                      <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-wbg-sapphire tracking-tight">
+                      <span className="rounded bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800">
                         {cleanId}
                       </span>
-                      <span className="text-xs font-bold text-wbg-navy group-hover:text-wbg-sapphire truncate">
-                        {proj.region || proj.category}
+                      <span className="text-xs font-bold text-slate-900 group-hover:text-teal-700 truncate">
+                        {proj.label.replace(`${cleanId}: `, "")}
                       </span>
-                      {proj.financingAmountM && (
-                        <span className="text-[11px] font-semibold text-emerald-700 ml-auto">
-                          ${proj.financingAmountM.toFixed(1)}M
-                        </span>
-                      )}
                     </div>
-                    <p className="mt-1 text-[11px] text-wbg-slate-500 truncate">
-                      {proj.label.replace(`${cleanId}: `, "")}
-                    </p>
                   </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-wbg-sapphire group-hover:translate-x-0.5 transition-all" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-teal-600 group-hover:translate-x-0.5 transition-all" />
                 </div>
               );
             })}
@@ -365,28 +315,8 @@ export function EntityInspector({
     );
   }
 
-  // A specific node is selected: Show its Dossier
+  // 3. Node IS selected: Multi-Tab Intelligence Dossier
   const badge = getCategoryBadge(node.category);
-
-  // Find direct connected neighbors
-  const connectedEdges = edges.filter(
-    (e) => e.source === node.id || e.target === node.id
-  );
-
-  const connectedNodes = connectedEdges
-    .map((e) => {
-      const isSource = e.source === node.id;
-      const neighborId = isSource ? e.target : e.source;
-      const neighbor = nodesMap.get(neighborId);
-      return {
-        edgeId: e.id,
-        relation: e.label,
-        isOutgoing: isSource,
-        node: neighbor,
-      };
-    })
-    .filter((item) => item.node !== undefined);
-
   const handleCopyHash = () => {
     if (node.provenance.documentSha256) {
       navigator.clipboard.writeText(node.provenance.documentSha256);
@@ -395,235 +325,331 @@ export function EntityInspector({
     }
   };
 
-  // Derive official project portal URL
-  const projectIdMatch = node.id.startsWith("PROJ_")
-    ? node.id.replace("PROJ_", "")
-    : node.id.startsWith("DISC_")
-    ? node.id.split("_")[1]
-    : null;
-
-  const officialPortalUrl = projectIdMatch
-    ? `https://projects.worldbank.org/en/projects-operations/project-detail/${projectIdMatch}`
-    : (node.metadata as any)?.officialUrl || null;
-
   return (
-    <div className="h-full w-full flex flex-col overflow-y-auto bg-white p-6">
-      {/* Header & Close Button */}
-      <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-        <div>
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${badge.bgClass} ${badge.textClass} ${badge.borderClass}`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: badge.colorHex }}></span>
-            <span>{badge.label}</span>
-          </span>
-          <h3 className="mt-2 text-base font-bold text-wbg-navy leading-snug">
-            {node.label}
-          </h3>
-          <span className="text-xs font-semibold text-wbg-slate-400 tracking-tight">{node.id}</span>
-        </div>
-
-        <div className="flex items-center gap-1 shrink-0">
-          {onCollapse && (
-            <button
-              onClick={onCollapse}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-wbg-navy transition-colors"
-              title="Minimize panel"
+    <div className="h-full w-full flex flex-col overflow-hidden bg-white">
+      {/* Header */}
+      <div className="border-b border-slate-100 p-5 pb-3">
+        <div className="flex items-start justify-between">
+          <div>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${badge.bgClass} ${badge.textClass} ${badge.borderClass}`}
             >
-              <Minus className="h-4 w-4" />
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-            aria-label="Deselect Node"
-            title="Return to Portfolio Overview"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Dependency Quick Actions */}
-      {onSetTraceEndpoint && (
-        <div className="mt-3 flex items-center gap-2 border-b border-slate-100 pb-3">
-          <button
-            onClick={() => onSetTraceEndpoint(node.id, "source")}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-[11px] font-semibold text-wbg-slate-700 hover:bg-white hover:border-wbg-sapphire hover:text-wbg-sapphire transition-all shadow-2xs"
-          >
-            <Crosshair className="h-3 w-3 text-wbg-sapphire" />
-            <span>Set Path Origin</span>
-          </button>
-          <button
-            onClick={() => onSetTraceEndpoint(node.id, "target")}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-[11px] font-semibold text-wbg-slate-700 hover:bg-white hover:border-wbg-sapphire hover:text-wbg-sapphire transition-all shadow-2xs"
-          >
-            <GitCommit className="h-3 w-3 text-cyan-600" />
-            <span>Set Path Target</span>
-          </button>
-        </div>
-      )}
-
-      {/* Core Attributes */}
-      <div className="mt-4 space-y-3 text-xs">
-        {node.financingAmountM && (
-          <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-wbg-sapphire">
-              Approved Financing Commitment
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: badge.colorHex }}></span>
+              <span>{badge.label}</span>
             </span>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-wbg-navy">
-                {formatCurrencyM(node.financingAmountM)}
-              </span>
-              {node.organization && (
-                <span className="rounded bg-white px-2 py-0.5 font-bold text-wbg-navy border border-sky-200 shadow-2xs">
-                  {node.organization} Facility
-                </span>
+            <h3 className="mt-2 text-base font-bold text-slate-900 leading-snug">
+              {node.label}
+            </h3>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              <span className="text-xs font-semibold text-slate-400 tracking-tight">{node.id}</span>
+              {onFocusSubTree && (
+                <button
+                  onClick={() => onFocusSubTree(node.id)}
+                  className="flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-800 hover:bg-teal-100 transition-colors shadow-2xs"
+                  title="Focus solely on this entity and its connected sub-tree"
+                >
+                  <Eye className="h-3 w-3 text-teal-600" />
+                  <span>Focus Sub-Tree</span>
+                </button>
+              )}
+              {onOpenDossier && (node.category === "asset" || node.category === "project" || node.id.startsWith("PUB_")) && (
+                <button
+                  onClick={() => onOpenDossier(node)}
+                  className="flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800 hover:bg-sky-100 transition-colors shadow-2xs"
+                  title="Open isolated document reader with structural citations and official PDF"
+                >
+                  <BookOpen className="h-3 w-3 text-sky-600" />
+                  <span>Dedicated Dossier</span>
+                </button>
               )}
             </div>
           </div>
-        )}
 
-        {node.region && (
-          <div className="flex justify-between border-b border-slate-100 py-2">
-            <span className="text-wbg-slate-500 font-medium">Sovereign Region:</span>
-            <span className="font-semibold text-wbg-navy">{node.region}</span>
-          </div>
-        )}
-
-        {node.sector && (
-          <div className="flex justify-between border-b border-slate-100 py-2">
-            <span className="text-wbg-slate-500 font-medium">Operational Sector:</span>
-            <span className="font-semibold text-wbg-navy text-right max-w-[220px]">
-              {node.sector}
-            </span>
-          </div>
-        )}
-
-        {node.metadata?.description && (
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3">
-            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
-              Institutional Scope & Objectives
-            </span>
-            <p className="mt-1 leading-relaxed text-wbg-slate-700">
-              {node.metadata.description}
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* W3C PROV-O Verified Lineage */}
-      <div className="mt-6 rounded-xl border border-emerald-200/90 bg-emerald-50/40 p-4">
-        <div className="flex items-center justify-between text-xs">
-          <span className="flex items-center gap-1.5 font-bold text-emerald-900">
-            <ShieldCheck className="h-4 w-4 text-emerald-600" />
-            W3C PROV-O Verified Lineage
-          </span>
-          <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
-            {node.provenance.verifiedStatus}
-          </span>
-        </div>
-
-        <div className="mt-3 space-y-2 text-[11px] text-wbg-slate-700">
-          <div>
-            <span className="text-slate-400">Authorized By:</span>{" "}
-            <span className="font-semibold text-wbg-navy">{node.provenance.wasGeneratedBy}</span>
-          </div>
-          <div>
-            <span className="text-slate-400">Activity Record:</span>{" "}
-            <span className="text-[10px] font-semibold text-emerald-800 tracking-tight">{node.provenance.provActivity}</span>
-          </div>
-          <div>
-            <span className="text-slate-400">Confidence Score:</span>{" "}
-            <span className="font-bold text-emerald-700">
-              {(node.provenance.confidenceScore * 100).toFixed(1)}% High-Trust
-            </span>
-          </div>
-
-          <div className="rounded-lg border border-emerald-200 bg-white p-2">
-            <div className="flex items-center justify-between text-[10px] text-slate-500">
-              <span className="flex items-center gap-1 font-medium">
-                SHA-256 Digest
-              </span>
+          <div className="flex items-center gap-1 shrink-0">
+            {onCollapse && (
               <button
-                onClick={handleCopyHash}
-                className="flex items-center gap-1 text-emerald-700 hover:text-emerald-900 font-semibold"
+                onClick={onCollapse}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                title="Minimize panel"
               >
-                {copiedHash ? (
-                  <>
-                    <Check className="h-2.5 w-2.5" />
-                    <span>Copied</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-2.5 w-2.5" />
-                    <span>Copy</span>
-                  </>
-                )}
+                <Minus className="h-4 w-4" />
               </button>
-            </div>
-            <div className="mt-1 break-all text-[10px] font-semibold text-wbg-navy tracking-tight">
-              {node.provenance.documentSha256}
-            </div>
+            )}
+            <button
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              title="Return to Portfolio Overview"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="mt-4 flex items-center gap-2 border-b border-slate-100 pb-1">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={`pb-1.5 text-xs font-semibold border-b-2 transition-all ${
+              activeTab === "overview"
+                ? "border-teal-600 text-teal-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            Overview &amp; Lineage
+          </button>
+          <button
+            onClick={() => setActiveTab("doc_intel")}
+            className={`pb-1.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === "doc_intel"
+                ? "border-teal-600 text-teal-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            <span>Document Intelligence</span>
+            {insightData && (
+              <span className="rounded-full bg-teal-100 px-1.5 py-0.2 text-[9px] text-teal-800 font-bold">
+                {insightData.totalSections}p
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("report");
+              if (!reportMarkdown) handleGenerateReport();
+            }}
+            className={`pb-1.5 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === "report"
+                ? "border-teal-600 text-teal-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+            <span>Briefing Report</span>
+          </button>
         </div>
       </div>
 
-      {/* Official World Bank Project Portal & Document Link */}
-      {officialPortalUrl && (
-        <div className="mt-4">
-          <a
-            href={officialPortalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 rounded-xl bg-wbg-navy py-2.5 px-4 text-xs font-semibold text-white shadow-xs hover:bg-[#001730] transition-colors group"
-          >
-            <ExternalLink className="h-3.5 w-3.5 text-sky-400 group-hover:scale-110 transition-transform" />
-            <span>View Official World Bank Project Portal</span>
-          </a>
-          <p className="mt-1 text-center text-[10px] text-wbg-slate-400">
-            Access official Project Appraisal Documents (PAD), ISR reports & contracts
-          </p>
-        </div>
-      )}
+      {/* Tab Body */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+        {/* TAB 1: OVERVIEW */}
+        {activeTab === "overview" && (
+          <>
+            {onSetTraceEndpoint && (
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <button
+                  onClick={() => onSetTraceEndpoint(node.id, "source")}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-white hover:border-teal-500 hover:text-teal-700 transition-all"
+                >
+                  <Crosshair className="h-3 w-3 text-teal-600" />
+                  <span>Set Path Origin</span>
+                </button>
+                <button
+                  onClick={() => onSetTraceEndpoint(node.id, "target")}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-white hover:border-teal-500 hover:text-teal-700 transition-all"
+                >
+                  <GitCommit className="h-3 w-3 text-sky-600" />
+                  <span>Set Path Target</span>
+                </button>
+              </div>
+            )}
 
-      {/* Connected Dependencies */}
-      <div className="mt-6 border-t border-slate-100 pt-4">
-        <h4 className="text-xs font-bold text-wbg-navy uppercase tracking-wider">
-          Connected Dependency Chain ({connectedNodes.length})
-        </h4>
-        <p className="text-[11px] text-wbg-slate-500">
-          Click any linked entity to inspect institutional dependencies.
-        </p>
+            {node.financingAmountM && (
+              <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-3">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-teal-700">
+                  Approved Financing Commitment
+                </span>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-slate-900">
+                    {formatCurrencyM(node.financingAmountM)}
+                  </span>
+                  <span className="rounded bg-white px-2 py-0.5 font-bold text-slate-800 border border-teal-200">
+                    Multilateral Facility
+                  </span>
+                </div>
+              </div>
+            )}
 
-        <div className="mt-3 space-y-2">
-          {connectedNodes.map((item, idx) => {
-            const neighborBadge = getCategoryBadge(item.node!.category);
-            return (
-              <div
-                key={idx}
-                onClick={() => onSelectNode(item.node!.id)}
-                className="group flex cursor-pointer items-center justify-between rounded-lg border border-slate-200/80 p-2.5 text-xs hover:border-wbg-sapphire hover:bg-slate-50 transition-all"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span
-                    className="h-2 w-2 rounded-full shrink-0"
-                    style={{ backgroundColor: neighborBadge.colorHex }}
-                  ></span>
-                  <div className="min-w-0">
-                    <span className="font-semibold text-wbg-navy group-hover:text-wbg-sapphire line-clamp-1">
-                      {item.node!.label}
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-semibold tracking-tight">
-                      {item.relation}
-                    </span>
+            <div className="rounded-xl border border-emerald-200/90 bg-emerald-50/40 p-4">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 font-bold text-emerald-900">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  W3C PROV-O Lineage
+                </span>
+                <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">
+                  {node.provenance.verifiedStatus}
+                </span>
+              </div>
+              <div className="mt-3 space-y-2 text-[11px] text-slate-700">
+                <div>
+                  <span className="text-slate-400">Activity:</span>{" "}
+                  <span className="font-semibold text-slate-900">{node.provenance.provActivity}</span>
+                </div>
+                <div className="rounded-lg border border-emerald-200 bg-white p-2">
+                  <div className="flex items-center justify-between text-[10px] text-slate-500">
+                    <span className="font-medium">SHA-256 Digest</span>
+                    <button
+                      onClick={handleCopyHash}
+                      className="flex items-center gap-1 text-emerald-700 font-semibold"
+                    >
+                      {copiedHash ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <div className="mt-1 break-all text-[10px] font-mono text-slate-900">
+                    {node.provenance.documentSha256}
                   </div>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-wbg-sapphire group-hover:translate-x-0.5 transition-all" />
               </div>
-            );
-          })}
-        </div>
+            </div>
+          </>
+        )}
+
+        {/* TAB 2: DOCUMENT INTELLIGENCE (SECTIONS & COVENANTS) */}
+        {activeTab === "doc_intel" && (
+          <div className="space-y-4">
+            {isLoadingInsights ? (
+              <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+                <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
+                <span className="mt-2 text-xs">Loading pre-processed document intelligence...</span>
+              </div>
+            ) : insightData ? (
+              <>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Official Publication</span>
+                  <h4 className="mt-0.5 text-xs font-bold text-slate-900">{insightData.asset.title}</h4>
+                  <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600">
+                    <span>Type: {insightData.asset.docType}</span>
+                    <a
+                      href={insightData.asset.pdfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-teal-600 font-semibold hover:underline flex items-center gap-1"
+                    >
+                      <span>View PDF</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+
+                {/* Extracted Semantic Triplets with Page Numbers */}
+                <div>
+                  <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                    Extracted Legal Covenants &amp; Triplets ({insightData.triplets.length})
+                  </h5>
+                  <div className="space-y-2">
+                    {insightData.triplets.map((t) => (
+                      <div key={t.id} className="rounded-xl border border-teal-200 bg-teal-50/50 p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="rounded bg-teal-600 px-1.5 py-0.5 text-[9px] font-bold text-white uppercase">
+                            {t.predicate}
+                          </span>
+                          <span className="text-[10px] font-semibold text-teal-800">
+                            Page {t.pageNumber}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 text-xs font-semibold text-slate-900">
+                          {t.subject} ➔ {t.object}
+                        </div>
+                        <p className="mt-1 text-[11px] italic text-slate-600 leading-relaxed">
+                          &quot;{t.verbatimQuote}&quot;
+                        </p>
+                        <div className="mt-2 text-[10px] text-slate-400 font-mono">
+                          Citation: {t.citation}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Parsed Sections */}
+                <div>
+                  <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                    Parsed Structural Chunks ({insightData.chunks.length})
+                  </h5>
+                  <div className="space-y-2">
+                    {insightData.chunks.slice(0, 5).map((c) => (
+                      <div key={c.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <div className="flex items-center justify-between text-[10px] text-slate-400">
+                          <span className="font-bold text-slate-700">{c.sectionTitle}</span>
+                          <span>Page {c.pageNumber}</span>
+                        </div>
+                        <p className="mt-1.5 text-[11px] text-slate-600 line-clamp-3 leading-relaxed">
+                          {c.content}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-6 text-slate-400">
+                <FileText className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                <p>No document intelligence pre-indexed for this node yet.</p>
+                <button
+                  onClick={async () => {
+                    const cleanId = node.id.replace("PROJ_", "").replace("ASSET_", "");
+                    await fetch(`http://localhost:8000/api/ingest/trigger/${cleanId}`, { method: "POST" });
+                    alert(`Queued background ingestion for ${cleanId}`);
+                  }}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  <span>Queue Background Ingestion</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: EXECUTIVE BRIEFING REPORT */}
+        {activeTab === "report" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="text-[11px] font-bold uppercase text-slate-500">Synthesized Executive Brief</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleGenerateReport}
+                  disabled={isGeneratingReport}
+                  className="flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-200"
+                >
+                  {isGeneratingReport ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3 text-amber-500" />}
+                  <span>Regenerate</span>
+                </button>
+                {reportMarkdown && (
+                  <button
+                    onClick={handleCopyReport}
+                    className="flex items-center gap-1 rounded bg-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-teal-700"
+                  >
+                    {copiedReport ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    <span>{copiedReport ? "Copied" : "Copy Markdown"}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {isGeneratingReport ? (
+              <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+                <Loader2 className="h-6 w-6 animate-spin text-teal-600" />
+                <span className="mt-2 text-xs">Synthesizing institutional briefing report...</span>
+              </div>
+            ) : reportMarkdown ? (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-slate-800">
+                {reportMarkdown}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-slate-400">
+                <p>Click below to synthesize an executive briefing document.</p>
+                <button
+                  onClick={handleGenerateReport}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  <span>Generate Briefing Report</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
