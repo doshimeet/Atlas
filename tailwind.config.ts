@@ -35,9 +35,38 @@ const config: Config = {
           tech: "#059669",
           policy: "#d97706",
         },
+        border: "#e2e8f0",
+        background: "#f8fafc",
+        foreground: "#0f172a",
+        primary: {
+          DEFAULT: "#0071bc",
+          foreground: "#ffffff",
+        },
+        secondary: {
+          DEFAULT: "#f1f5f9",
+          foreground: "#0f172a",
+        },
+        muted: {
+          DEFAULT: "#f1f5f9",
+          foreground: "#64748b",
+        },
+        accent: {
+          DEFAULT: "#f1f5f9",
+          foreground: "#002244",
+        },
+        card: {
+          DEFAULT: "#ffffff",
+          foreground: "#0f172a",
+        },
+        popover: {
+          DEFAULT: "#ffffff",
+          foreground: "#0f172a",
+        },
+        verified: "#059669",
       },
       fontFamily: {
         sans: ["var(--font-jakarta)", "system-ui", "-apple-system", "sans-serif"],
+        display: ["var(--font-jakarta)", "system-ui", "-apple-system", "sans-serif"],
       },
       boxShadow: {
         xs: "0 1px 2px 0 rgba(15, 23, 42, 0.04)",
