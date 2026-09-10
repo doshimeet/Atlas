@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
 import { ArrowRight } from "lucide-react"
-import { ANCHORS, DOT_HEX, NARRATION, type DotColor } from "@/lib/atlas-data"
+import { ANCHORS, DOT_HEX, NARRATION_THREADS, type DotColor } from "@/lib/atlas-data"
 
 const fadeUp = {
   hidden: { opacity: 0, y: 14 },
@@ -55,9 +55,14 @@ export function LivingAtlasHero() {
     const points: Point[] = []
     const mouse = { x: -9999, y: -9999, active: false }
 
-    // idle narration state
-    let lastInteract = performance.now()
-    let narration: { from: Point; to: Point; t: number; done: boolean } | null = null
+    // Continuous narrative thread state (zero lag, continuous loop, uniform speed)
+    let threadIndex = 0
+    let threadT = 0
+    let threadPhase: "drawing" | "holding" = "drawing"
+    let holdTimer = 0
+    const HOLD_DURATION = 55 // ~0.9s hold after connection completes
+    const DRAW_SPEED = 1 / (60 * 1.6) // calibrated smooth glide (~1.6s) between nodes
+    let prevThread: { from: Point; to: Point; alpha: number } | null = null
 
     function seed() {
       points.length = 0
@@ -110,7 +115,7 @@ export function LivingAtlasHero() {
       seed()
     }
 
-    function drawThread(a: Point, b: Point, progress: number, pulse: boolean) {
+    function drawThread(a: Point, b: Point, progress: number, pulse: boolean, alpha: number = 0.9) {
       const mx = (a.x + b.x) / 2
       const my = (a.y + b.y) / 2 - 60
       // sample quadratic bezier up to `progress`
@@ -124,7 +129,7 @@ export function LivingAtlasHero() {
         if (i === 0) ctx.moveTo(x, y)
         else ctx.lineTo(x, y)
       }
-      ctx.strokeStyle = "rgba(31,95,209,0.9)"
+      ctx.strokeStyle = `rgba(31,95,209,${alpha})`
       ctx.lineWidth = 1.8
       ctx.stroke()
 
@@ -134,7 +139,7 @@ export function LivingAtlasHero() {
         const y = (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * my + t * t * b.y
         ctx.beginPath()
         ctx.arc(x, y, 3.4, 0, Math.PI * 2)
-        ctx.fillStyle = "#1f5fd1"
+        ctx.fillStyle = `rgba(31,95,209,${Math.min(1, alpha + 0.2)})`
         ctx.fill()
       }
     }
@@ -161,7 +166,7 @@ export function LivingAtlasHero() {
       }
 
       // physics
-      const ampl = narration ? 0.5 : 1 // calm particles while a story animates
+      const ampl = 0.75 // calm particles while story threads animate
       for (const p of points) {
         const fx = (p.homeX - p.x) * K
         const fy = (p.homeY - p.y) * K
@@ -189,46 +194,117 @@ export function LivingAtlasHero() {
         p.glow += (target - p.glow) * 0.08
       }
 
-      // draw dots
+      // Continuous thread narration cycle (zero lag, continuous, uniform speed)
+      let activeFrom: Point | null = null
+      let activeTo: Point | null = null
+
+      if (points.length > 0 && NARRATION_THREADS.length > 0) {
+        const currentPair = NARRATION_THREADS[threadIndex % NARRATION_THREADS.length]
+        activeFrom = points.find((p) => p.id === currentPair.from) || null
+        activeTo = points.find((p) => p.id === currentPair.to) || null
+
+        // Draw gently fading previous thread trail
+        if (prevThread && prevThread.alpha > 0.02) {
+          drawThread(prevThread.from, prevThread.to, 1, false, prevThread.alpha)
+          prevThread.alpha -= 0.015 // smooth ~1s dissolve
+        }
+
+        if (activeFrom && activeTo) {
+          if (threadPhase === "drawing") {
+            threadT += DRAW_SPEED
+            if (threadT >= 1) {
+              threadT = 1
+              threadPhase = "holding"
+              holdTimer = HOLD_DURATION
+            }
+            drawThread(activeFrom, activeTo, threadT, true, 0.95)
+          } else if (threadPhase === "holding") {
+            holdTimer--
+            drawThread(activeFrom, activeTo, 1, false, 0.95)
+
+            if (holdTimer <= 0) {
+              prevThread = { from: activeFrom, to: activeTo, alpha: 0.85 }
+              threadIndex = (threadIndex + 1) % NARRATION_THREADS.length
+              threadPhase = "drawing"
+              threadT = 0
+            }
+          }
+        }
+      }
+
+      // draw dots with origin and destination highlighting
+      const now = performance.now()
       for (const p of points) {
         const hex = DOT_HEX[p.color]
-        if (p.label) {
+        const isFrom = p === activeFrom
+        const isTo = p === activeTo
+
+        if (isFrom) {
+          // Origin node: animated beacon halo & perimeter pulse ring
+          const pulseRing = 8 + Math.sin(now * 0.005) * 3
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, p.r + pulseRing + 3, 0, Math.PI * 2)
+          ctx.strokeStyle = hexToRgba(hex, 0.55)
+          ctx.lineWidth = 1.4
+          ctx.stroke()
+
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, p.r + pulseRing, 0, Math.PI * 2)
+          ctx.fillStyle = hexToRgba(hex, 0.22)
+          ctx.fill()
+        } else if (isTo) {
+          // Destination node: anticipation glow while drawing, vibrant arrival beacon on reach
+          const arrived = threadPhase === "holding" || threadT >= 0.85
+          const ringSize = arrived ? 9 + Math.sin(now * 0.007) * 3.5 : 6 + threadT * 4
+          const ringAlpha = arrived ? 0.65 : 0.25 + threadT * 0.35
+
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, p.r + ringSize + 3, 0, Math.PI * 2)
+          ctx.strokeStyle = hexToRgba(hex, ringAlpha)
+          ctx.lineWidth = 1.4
+          ctx.stroke()
+
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, p.r + ringSize, 0, Math.PI * 2)
+          ctx.fillStyle = hexToRgba(hex, ringAlpha * 0.4)
+          ctx.fill()
+        } else if (p.label) {
+          // Standard labeled dot halo
           ctx.beginPath()
           ctx.arc(p.x, p.y, p.r + 7, 0, Math.PI * 2)
           ctx.fillStyle = hexToRgba(hex, 0.14)
           ctx.fill()
         }
+
+        // Main dot body
         ctx.beginPath()
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+        ctx.arc(p.x, p.y, (isFrom || isTo) ? p.r + 0.8 : p.r, 0, Math.PI * 2)
         ctx.fillStyle = hex
         ctx.globalAlpha = p.label ? 1 : 0.5
         ctx.fill()
         ctx.globalAlpha = 1
 
-        if (p.label) {
-          ctx.font = "500 12px var(--font-inter), system-ui, sans-serif"
-          ctx.fillStyle = "rgba(20,34,60,0.82)"
-          ctx.textAlign = "left"
-          ctx.fillText(p.label, p.x + p.r + 8, p.y + 4)
+        // White border ring for active from/to nodes for crisp definition
+        if (isFrom || isTo) {
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, p.r + 0.8, 0, Math.PI * 2)
+          ctx.strokeStyle = "#ffffff"
+          ctx.lineWidth = 1.6
+          ctx.stroke()
         }
-      }
 
-      // idle auto-narration (runs once)
-      const idle = performance.now() - lastInteract
-      if (!narration && idle > 4000) {
-        const from = points.find((p) => p.id === NARRATION.from)
-        const to = points.find((p) => p.id === NARRATION.to)
-        if (from && to) narration = { from, to, t: 0, done: false }
-      }
-      if (narration) {
-        if (!narration.done) {
-          narration.t += 1 / 60 / 0.9 // ~900ms
-          if (narration.t >= 1) {
-            narration.t = 1
-            narration.done = true
+        // Label typography
+        if (p.label) {
+          if (isFrom || isTo) {
+            ctx.font = "600 12.5px var(--font-inter), system-ui, sans-serif"
+            ctx.fillStyle = "#0f172a"
+          } else {
+            ctx.font = "500 12px var(--font-inter), system-ui, sans-serif"
+            ctx.fillStyle = "rgba(20,34,60,0.82)"
           }
+          ctx.textAlign = "left"
+          ctx.fillText(p.label, p.x + p.r + 9, p.y + 4)
         }
-        drawThread(narration.from, narration.to, narration.t, !narration.done)
       }
 
       raf = requestAnimationFrame(frame)
@@ -263,18 +339,18 @@ export function LivingAtlasHero() {
           ctx.fillText(p.label, p.x + p.r + 8, p.y + 4)
         }
       }
-      const from = points.find((p) => p.id === NARRATION.from)
-      const to = points.find((p) => p.id === NARRATION.to)
+      const firstPair = NARRATION_THREADS[0]
+      const from = points.find((p) => p.id === firstPair.from)
+      const to = points.find((p) => p.id === firstPair.to)
       if (from && to) drawThread(from, to, 1, false)
     }
 
     function onMove(e: PointerEvent) {
+      if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       mouse.x = e.clientX - rect.left
       mouse.y = e.clientY - rect.top
       mouse.active = true
-      lastInteract = performance.now()
-      narration = null
 
       // hover detection on labeled anchors
       let hit: Point | null = null

@@ -98,12 +98,51 @@ export const ANCHORS: AnchorDot[] = [
   },
 ]
 
-// The idle auto-narration draws exactly one thread, once.
-export const NARRATION = {
-  from: "kenya-credit",
-  to: "jobs",
-  caption: "A credit to Kenya becomes fiber cables — and thousands of jobs. Every thread has a receipt.",
-}
+// Continuous operational narration sequence across labeled anchor nodes.
+export const NARRATION_THREADS = [
+  {
+    from: "kenya-credit",
+    to: "ministry",
+    caption: "A $350M credit flows directly to the executing Ministry of ICT in Kenya.",
+  },
+  {
+    from: "ministry",
+    to: "jobs",
+    caption: "Fiber rollout under the Ministry creates thousands of local digital economy jobs.",
+  },
+  {
+    from: "jobs",
+    to: "countries",
+    caption: "Livelihood programs expand across 190 sovereign member countries.",
+  },
+  {
+    from: "countries",
+    to: "docs",
+    caption: "Every sovereign operation anchors in cryptographic Project Appraisal Documents.",
+  },
+  {
+    from: "docs",
+    to: "ganga",
+    caption: "Appraisal records link historical ecological data to the Ganga river basin.",
+  },
+  {
+    from: "ganga",
+    to: "sanitation",
+    caption: "Basin restoration initiatives finance municipal water treatment plants.",
+  },
+  {
+    from: "sanitation",
+    to: "water",
+    caption: "Treatment plants directly register verified water quality sensor telemetry.",
+  },
+  {
+    from: "water",
+    to: "kenya-credit",
+    caption: "Multi-sector lessons circulate back through the global operational memory.",
+  },
+]
+
+export const NARRATION = NARRATION_THREADS[0]
 
 export type MiniNode = { id: string; label: string; color: DotColor; x: number; y: number }
 export type MiniEdge = [string, string]

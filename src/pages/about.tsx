@@ -1,19 +1,22 @@
 import React from "react";
+import Head from "next/head";
 import Link from "next/link";
-import { ArrowRight, BookOpen, Compass, ShieldCheck } from "lucide-react";
+import { ArrowRight, BookOpen } from "lucide-react";
 import { InstitutionalBriefing } from "@/components/about/InstitutionalBriefing";
 import { AnimatedProvenanceBeam } from "@/components/about/AnimatedProvenanceBeam";
 import { MethodologyMatrix } from "@/components/about/MethodologyMatrix";
 
-export const metadata = {
-  title: "About Us & Institutional Methodology | Atlas Knowledge • World Bank Group",
-  description:
-    "Explore the 80-year Bretton Woods institutional memory mandate, W3C PROV-O cryptographic provenance pipeline, and multilateral development methodology.",
-};
-
 export default function AboutPage() {
   return (
     <div className="w-full">
+      <Head>
+        <title>About Us &amp; Institutional Methodology | Atlas Knowledge • World Bank Group</title>
+        <meta
+          name="description"
+          content="Explore the 80-year Bretton Woods institutional memory mandate, W3C PROV-O cryptographic provenance pipeline, and multilateral development methodology."
+        />
+      </Head>
+
       {/* Top Editorial Hero */}
       <section className="relative overflow-hidden bg-porcelain-grid pt-14 pb-16 md:pt-20 md:pb-24 border-b border-wbg-border">
         <div className="relative mx-auto max-w-7xl px-6 sm:px-8">

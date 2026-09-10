@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { useRouter } from "next/router";
 import { GlobalHeader } from "./GlobalHeader";
 import { GlobalFooter } from "./GlobalFooter";
 import { CommandPalette } from "./CommandPalette";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const router = useRouter();
+  const pathname = router.pathname;
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {

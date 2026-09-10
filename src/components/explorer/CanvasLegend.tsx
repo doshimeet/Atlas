@@ -33,7 +33,7 @@ export function CanvasLegend() {
   ];
 
   return (
-    <div className="absolute top-4 left-4 z-20 w-52 rounded-xl border border-slate-200/90 bg-white/95 p-3 shadow-md backdrop-blur-md select-none transition-all">
+    <div className="absolute bottom-4 left-4 z-20 w-52 rounded-xl border border-slate-200/90 bg-white/95 p-3 shadow-md backdrop-blur-md select-none transition-all">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex w-full items-center justify-between text-xs font-bold text-slate-800 hover:text-slate-950"

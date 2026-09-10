@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRouter } from "next/router";
 import { Search, Globe2, Activity, Menu, X, ArrowRight, ShieldCheck, Bell } from "lucide-react";
 
 interface GlobalHeaderProps {
@@ -10,7 +10,8 @@ interface GlobalHeaderProps {
 }
 
 export function GlobalHeader({ onOpenSearch }: GlobalHeaderProps) {
-  const pathname = usePathname();
+  const router = useRouter();
+  const pathname = router.pathname;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navLinks = [

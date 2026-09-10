@@ -1,8 +1,14 @@
 import React from "react";
-import { LivingAtlasHero } from "@/components/home/LivingAtlasHero";
+import dynamic from "next/dynamic";
 import { ConnectSandbox } from "@/components/home/ConnectSandbox";
 import { StoryCards } from "@/components/home/StoryCards";
 import { EvidenceStrip } from "@/components/home/EvidenceStrip";
+
+// Dynamic import for canvas-based LivingAtlasHero to ensure SSR safety in Pages Router
+const LivingAtlasHero = dynamic(
+  () => import("@/components/home/LivingAtlasHero").then((mod) => mod.LivingAtlasHero),
+  { ssr: false }
+);
 
 export default function HomePage() {
   return (
@@ -21,4 +27,3 @@ export default function HomePage() {
     </div>
   );
 }
-

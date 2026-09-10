@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { Building2, Layers, DollarSign, Shield, ArrowRight } from "lucide-react";
 import { formatCurrencyM } from "@/lib/utils";
 
@@ -157,13 +158,13 @@ export function FinancingMatrix() {
 
       <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-wbg-slate-500">
         <span>Bretton Woods Multilateral Architecture</span>
-        <a
+        <Link
           href="/explorer"
           className="flex items-center gap-1 font-semibold text-wbg-sapphire hover:text-wbg-navy"
         >
           <span>Filter by {current.name} in Graph</span>
           <ArrowRight className="h-3 w-3" />
-        </a>
+        </Link>
       </div>
     </div>
   );

@@ -1,6 +1,5 @@
-"use client";
-
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import Head from "next/head";
 import { GraphCanvasRef } from "reagraph";
 import {
   GraphData,
@@ -404,6 +403,9 @@ export default function ExplorerPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-56px)] w-full overflow-hidden bg-slate-50/50">
+      <Head>
+        <title>Knowledge Graph Explorer | Atlas Knowledge • World Bank Group</title>
+      </Head>
       {/* 1. Hero Banner with "Ask the Knowledge Graph" Search Input */}
       <div className="relative shrink-0 border-b border-slate-200 bg-gradient-to-r from-sky-50/70 via-white to-slate-50 px-6 py-3 select-none">
         <div className="mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

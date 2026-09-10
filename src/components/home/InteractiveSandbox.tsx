@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { FileText, ArrowRight, ShieldCheck, Check, RefreshCw, Cpu, Layers, Link2 } from "lucide-react";
 
 export function InteractiveSandbox() {
@@ -184,13 +185,13 @@ export function InteractiveSandbox() {
             <span className="text-wbg-slate-500 text-[11px]">
               Click any triplet to inspect W3C citation &amp; SHA-256 derivation.
             </span>
-            <a
+            <Link
               href="/explorer"
               className="inline-flex items-center gap-1 font-semibold text-wbg-sapphire hover:text-wbg-navy"
             >
               <span>Explore in Atlas Knowledge</span>
               <ArrowRight className="h-3 w-3" />
-            </a>
+            </Link>
           </div>
         </div>
       </div>

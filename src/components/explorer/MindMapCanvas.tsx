@@ -171,7 +171,7 @@ export function MindMapCanvas({
         x: 0,
         y: 0,
         width: level === 0 ? 200 : level === 1 ? 190 : level === 2 ? 260 : 240,
-        height: level === 0 ? 44 : level === 1 ? 42 : level === 2 ? 64 : 34,
+        height: level === 0 ? 44 : level === 1 ? 42 : level === 2 ? 76 : 34,
         subtreeHeight: 0,
       };
 
@@ -196,18 +196,35 @@ export function MindMapCanvas({
 
     const root = buildBranch(rootNode.id, 0);
 
-    // Compute subtree vertical heights (bottom-up) with compact leaf spacing
+    // Compute subtree vertical heights (bottom-up) with dynamic card-aware spacing
     const LEAF_V_SPACING = 38;
+    const PRACTICE_INTER_GAP = 44;
+
     function computeSubtreeHeight(node: TreeNode): number {
       if (node.children.length === 0) {
-        node.subtreeHeight = LEAF_V_SPACING;
+        // Dynamic clearance for leaf nodes based on level to guarantee zero visual collisions
+        if (node.level === 2) {
+          node.subtreeHeight = 98; // 76px card + 22px clear vertical separation
+        } else if (node.level === 1) {
+          node.subtreeHeight = 72; // 42px practice pill + 30px gap
+        } else if (node.level === 0) {
+          node.subtreeHeight = 70;
+        } else {
+          node.subtreeHeight = LEAF_V_SPACING; // 38px for level 3/4 pills
+        }
         return node.subtreeHeight;
       }
+
       let sum = 0;
-      for (const child of node.children) {
+      for (let i = 0; i < node.children.length; i++) {
+        const child = node.children[i];
         sum += computeSubtreeHeight(child);
+        // Add inter-branch breathing space between Practice domains
+        if (node.level === 0 && i < node.children.length - 1) {
+          sum += PRACTICE_INTER_GAP;
+        }
       }
-      node.subtreeHeight = Math.max(sum, node.height + 20);
+      node.subtreeHeight = Math.max(sum, node.height + 24);
       return node.subtreeHeight;
     }
     computeSubtreeHeight(root);
@@ -238,11 +255,15 @@ export function MindMapCanvas({
       let currentChildY = startY;
       const childYPositions: number[] = [];
 
-      for (const child of node.children) {
+      for (let i = 0; i < node.children.length; i++) {
+        const child = node.children[i];
         const nextX = COL_X_OFFSETS[child.level] || x + 320;
         assignPositions(child, nextX, currentChildY);
         childYPositions.push(child.y);
         currentChildY += child.subtreeHeight;
+        if (node.level === 0 && i < node.children.length - 1) {
+          currentChildY += PRACTICE_INTER_GAP;
+        }
       }
 
       // Center parent vertically on its children
@@ -278,7 +299,10 @@ export function MindMapCanvas({
     // Right-Hand Category Brackets (Reference Diagram Style)
     // Strictly restrict brackets to the full institutional overview to prevent "Francis Addeah Darko Options"
     const bracketGroups: BracketGroup[] = [];
-    const rightmostX = 1720;
+    const maxNodeRight = allNodesList.length > 0
+      ? Math.max(...allNodesList.map((n) => n.x + n.width))
+      : 1400;
+    const rightmostX = maxNodeRight + 48;
     const isFullOverview = root.id === "FAC_WBG_KNOWLEDGE";
 
     if (isFullOverview) {
@@ -316,7 +340,7 @@ export function MindMapCanvas({
       }
     }
 
-    const maxX = rightmostX + 320;
+    const maxX = rightmostX + 280;
     const maxY = Math.max(...allNodesList.map((n) => n.y)) + 120;
 
     return {
@@ -348,18 +372,19 @@ export function MindMapCanvas({
     return set;
   }, [activeTreeKey, selectedNodeId, allTreeNodes]);
 
-  // Auto-center camera vertically on the Root node whenever node count or root changes
+  // Auto-center camera vertically on the Root node whenever node count, depth, or root changes
   useEffect(() => {
     if (containerRef.current && treeRoot) {
       const { clientWidth, clientHeight } = containerRef.current;
       if (clientWidth > 0 && clientHeight > 0) {
-        const targetZoom = Math.min(Math.max((clientWidth - 120) / 2100, 0.58), 0.80);
+        const contentW = canvasDimensions.width || 2100;
+        const targetZoom = Math.min(Math.max((clientWidth - 140) / contentW, 0.58), 0.85);
         const targetY = (clientHeight / 2) - (treeRoot.y * targetZoom);
         setZoom(targetZoom);
         setPan({ x: 50, y: targetY });
       }
     }
-  }, [treeRoot?.id, allTreeNodes.length]);
+  }, [treeRoot?.id, allTreeNodes.length, canvasDimensions.width, depth]);
 
   // Mouse pan & zoom handlers
   const handleWheel = useCallback((e: WheelEvent) => {
